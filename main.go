@@ -306,7 +306,7 @@ func getKeyStore(datastore string, keyName string) *Keystore {
 
 func loadTenantToken(config *menderConfig, datastore string) ([]byte, error) {
 	if tToken := config.GetTenantTokenPath(); tToken != "" {
-		datastore = tToken
+		datastore = path.Dir(tToken)
 	}
 	dirstore := NewDirStore(datastore)
 

@@ -312,26 +312,11 @@ func TestLoadTenantTokenAltConfigPath(t *testing.T) {
 	ds := NewDirStore(tdir)
 	assert.NotNil(t, ds)
 
-	ds.WriteAll("authtentoken", []byte("alt-path-tenant-token"))
-
-	tentok, err := loadTenantToken(&menderConfig{TenantTokenPath: tdir}, "ishouldnotmatter")
+	err = ds.WriteAll("authentoken", []byte("alt-path-tenant-token"))
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("alt-path-tenant-token"), tentok)
 
-	// test the alternative name
-	tdir, err = ioutil.TempDir("", "tmpconfdir")
+	tentok, err := loadTenantToken(&menderConfig{TenantTokenPath: path.Join(tdir, "authentoken")}, "ishouldnotmatter")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tdir)
-
-	ds = NewDirStore(tdir)
-	assert.NotNil(t, ds)
-
-	ds.WriteAll("altauthentoken", []byte("alt-path-tenant-token"))
-
-	tentok, err = loadTenantToken(&menderConfig{
-		TenantTokenName: "altauthentoken",
-		TenantTokenPath: tdir,
-	}, "ishouldnotmatter")
 	assert.Equal(t, []byte("alt-path-tenant-token"), tentok)
 
 }

@@ -16,6 +16,7 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"path"
 
 	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/client"
@@ -42,7 +43,6 @@ type menderConfig struct {
 	ServerCertificate            string
 	UpdateLogPath                string
 	TenantTokenPath              string
-	TenantTokenName              string
 }
 
 func LoadConfig(configFile string) (*menderConfig, error) {
@@ -107,10 +107,10 @@ func (c menderConfig) GetTenantTokenPath() string {
 }
 
 func (c menderConfig) GetTenantTokenName() string {
-	if c.TenantTokenName == "" {
+	if c.GetTenantTokenPath() == "" {
 		return defaultTenantTokenFile
 	}
-	return c.TenantTokenName
+	return path.Base(c.GetTenantTokenPath())
 }
 
 func (c menderConfig) GetVerificationKey() []byte {
