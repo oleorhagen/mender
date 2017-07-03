@@ -22,6 +22,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const defaultTenantTokenFile string = "authtentoken"
+
 type menderConfig struct {
 	ClientProtocol    string
 	DeviceKey         string
@@ -40,6 +42,7 @@ type menderConfig struct {
 	ServerCertificate            string
 	UpdateLogPath                string
 	TenantTokenPath              string
+	TenantTokenName              string
 }
 
 func LoadConfig(configFile string) (*menderConfig, error) {
@@ -101,6 +104,13 @@ func (c menderConfig) GetDeploymentLogLocation() string {
 
 func (c menderConfig) GetTenantTokenPath() string {
 	return c.TenantTokenPath
+}
+
+func (c menderConfig) GetTenantTokenName() string {
+	if c.TenantTokenName == "" {
+		return defaultTenantTokenFile
+	}
+	return c.TenantTokenName
 }
 
 func (c menderConfig) GetVerificationKey() []byte {

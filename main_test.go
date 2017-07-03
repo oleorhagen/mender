@@ -299,4 +299,39 @@ echo mac=00:11:22:33:44:55
 	_, err = db.ReadAll(authTokenName)
 	assert.Error(t, err)
 	assert.True(t, os.IsNotExist(err))
+
+}
+
+func TestLoadTenantTokenAltConfigPath(t *testing.T) {
+
+	// setup the alternative directory to store the tenant-token refered to by mender.config
+	tdir, err := ioutil.TempDir("", "conftest")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tdir)
+
+	ds := NewDirStore(tdir)
+	assert.NotNil(t, ds)
+
+	ds.WriteAll("authtentoken", []byte("alt-path-tenant-token"))
+
+	tentok, err := loadTenantToken(&menderConfig{TenantTokenPath: tdir}, "ishouldnotmatter")
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("alt-path-tenant-token"), tentok)
+
+	// test the alternative name
+	tdir, err = ioutil.TempDir("", "tmpconfdir")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tdir)
+
+	ds = NewDirStore(tdir)
+	assert.NotNil(t, ds)
+
+	ds.WriteAll("altauthentoken", []byte("alt-path-tenant-token"))
+
+	tentok, err = loadTenantToken(&menderConfig{
+		TenantTokenName: "altauthentoken",
+		TenantTokenPath: tdir,
+	}, "ishouldnotmatter")
+	assert.Equal(t, []byte("alt-path-tenant-token"), tentok)
+
 }
