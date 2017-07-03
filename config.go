@@ -39,6 +39,7 @@ type menderConfig struct {
 	ServerURL                    string
 	ServerCertificate            string
 	UpdateLogPath                string
+	TenantTokenPath              string
 }
 
 func LoadConfig(configFile string) (*menderConfig, error) {
@@ -96,6 +97,10 @@ func (c menderConfig) GetDeviceConfig() deviceConfig {
 
 func (c menderConfig) GetDeploymentLogLocation() string {
 	return c.UpdateLogPath
+}
+
+func (c menderConfig) GetTenantTokenPath() string {
+	return c.TenantTokenPath
 }
 
 func (c menderConfig) GetVerificationKey() []byte {
