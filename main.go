@@ -306,14 +306,8 @@ func getKeyStore(datastore string, keyName string) *Keystore {
 	return NewKeystore(dirstore, keyName)
 }
 
-func loadTenantToken(config *menderConfig, datastore string) ([]byte, error) {
-	var dirstore *DirStore
-	// TenantToken path will override datastore if set
-	if config.TenantTokenPath != "" {
-		dirstore = NewDirStore(config.GetTenantTokenPath())
-	} else {
-		dirstore = NewDirStore(datastore)
-	}
+func loadTenantToken(datastore string) ([]byte, error) {
+	dirstore := NewDirStore(datastore)
 
 	raw, err := dirstore.ReadAll(defaultTenantTokenFile)
 
@@ -323,8 +317,16 @@ func loadTenantToken(config *menderConfig, datastore string) ([]byte, error) {
 	return raw, nil
 }
 
+// if tenantToken-path is set in mender.conf override runOpts dataStore path
+func loadTenantTokenWrapper(config *menderConfig, dataStore string) ([]byte, error) {
+	if config.GetTenantTokenPath() != "" {
+		return loadTenantToken(config.GetTenantTokenPath())
+	}
+	return loadTenantToken(dataStore)
+}
+
 func commonInit(config *menderConfig, opts *runOptionsType) (*MenderPieces, error) {
-	tentok, err := loadTenantToken(config, *opts.dataStore)
+	tentok, err := loadTenantTokenWrapper(config, *opts.dataStore)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to load tenant token")
 	}
