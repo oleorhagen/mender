@@ -242,7 +242,7 @@ func TestMainBootstrap(t *testing.T) {
 	assert.NotNil(t, db)
 
 	// pretend we have a tenant token
-	ds.WriteAll(defaultTenantTokenFile, []byte("foo-tenant-token"))
+	ds.WriteAll(defaultTenantToken, []byte("foo-tenant-token"))
 
 	// setup test config
 	cpath := path.Join(tdir, "mender.config")
@@ -302,9 +302,8 @@ echo mac=00:11:22:33:44:55
 
 }
 
-func TestLoadTenantTokenAltConfigPath(t *testing.T) {
+func TestLoadTenantToken(t *testing.T) {
 
-	// setup the alternative directory to store the tenant-token refered to by mender.config
 	tdir, err := ioutil.TempDir("", "conftest")
 	assert.NoError(t, err)
 	defer os.RemoveAll(tdir)
@@ -312,11 +311,16 @@ func TestLoadTenantTokenAltConfigPath(t *testing.T) {
 	ds := NewDirStore(tdir)
 	assert.NotNil(t, ds)
 
-	err = ds.WriteAll("authentoken", []byte("alt-path-tenant-token"))
+	err = ds.WriteAll("authtentoken", []byte("authentication-token"))
 	assert.NoError(t, err)
 
-	tentok, err := loadTenantToken(&menderConfig{TenantTokenPath: path.Join(tdir, "authentoken")}, "ishouldnotmatter")
+	tentok, err := loadTenantToken(&menderConfig{TenantToken: "authtentoken"}, tdir)
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("alt-path-tenant-token"), tentok)
+	assert.Equal(t, []byte("authentication-token"), tentok)
+
+	// Test the default-token
+	tentok, err = loadTenantToken(&menderConfig{}, tdir)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("authentication-token"), tentok)
 
 }

@@ -16,14 +16,13 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
-	"path"
 
 	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/client"
 	"github.com/pkg/errors"
 )
 
-const defaultTenantTokenFile string = "authtentoken"
+const defaultTenantToken string = "authtentoken"
 
 type menderConfig struct {
 	ClientProtocol    string
@@ -42,7 +41,7 @@ type menderConfig struct {
 	ServerURL                    string
 	ServerCertificate            string
 	UpdateLogPath                string
-	TenantTokenPath              string
+	TenantToken                  string
 }
 
 func LoadConfig(configFile string) (*menderConfig, error) {
@@ -102,15 +101,11 @@ func (c menderConfig) GetDeploymentLogLocation() string {
 	return c.UpdateLogPath
 }
 
-func (c menderConfig) GetTenantTokenPath() string {
-	return c.TenantTokenPath
-}
-
-func (c menderConfig) GetTenantTokenName() string {
-	if c.GetTenantTokenPath() == "" {
-		return defaultTenantTokenFile
+func (c menderConfig) GetTenantToken() string {
+	if c.TenantToken == "" {
+		return defaultTenantToken
 	}
-	return path.Base(c.GetTenantTokenPath())
+	return c.TenantToken
 }
 
 func (c menderConfig) GetVerificationKey() []byte {
