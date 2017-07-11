@@ -242,7 +242,7 @@ func TestMainBootstrap(t *testing.T) {
 	assert.NotNil(t, db)
 
 	// pretend we have a tenant token
-	ds.WriteAll(defaultTenantToken, []byte("foo-tenant-token"))
+	ds.WriteAll(defaultTenantTokenFileName, []byte("foo-tenant-token"))
 
 	// setup test config
 	cpath := path.Join(tdir, "mender.config")
@@ -311,16 +311,15 @@ func TestLoadTenantToken(t *testing.T) {
 	ds := NewDirStore(tdir)
 	assert.NotNil(t, ds)
 
-	err = ds.WriteAll("authtentoken", []byte("authentication-token"))
-	assert.NoError(t, err)
-
-	tentok, err := loadTenantToken(&menderConfig{TenantToken: "authtentoken"}, tdir)
-	assert.NoError(t, err)
-	assert.Equal(t, []byte("authentication-token"), tentok)
+	ds.WriteAll("authtentoken", []byte("authentication-token"))
 
 	// Test the default-token
-	tentok, err = loadTenantToken(&menderConfig{}, tdir)
+	tentok, err := loadTenantToken(&menderConfig{}, tdir)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("authentication-token"), tentok)
+
+	tentok, err = loadTenantToken(&menderConfig{TenantToken: "custom-authorization-token"}, "nostoreneeded")
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("custom-authorization-token"), tentok)
 
 }

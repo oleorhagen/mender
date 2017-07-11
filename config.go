@@ -22,7 +22,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const defaultTenantToken string = "authtentoken"
+const defaultTenantTokenFileName string = "authtentoken"
 
 type menderConfig struct {
 	ClientProtocol    string
@@ -101,11 +101,12 @@ func (c menderConfig) GetDeploymentLogLocation() string {
 	return c.UpdateLogPath
 }
 
-func (c menderConfig) GetTenantToken() string {
-	if c.TenantToken == "" {
-		return defaultTenantToken
-	}
-	return c.TenantToken
+func (c menderConfig) GetCustomTenantToken() []byte {
+	return []byte(c.TenantToken)
+}
+
+func (c menderConfig) GetDefaultTenantTokenFileName() string {
+	return defaultTenantTokenFileName
 }
 
 func (c menderConfig) GetVerificationKey() []byte {
