@@ -15,6 +15,7 @@
 package statescript
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -24,8 +25,22 @@ import (
 	"time"
 
 	"github.com/mendersoftware/log"
+	"github.com/mendersoftware/mender/store"
 	"github.com/pkg/errors"
 )
+
+const (
+	exitRetryLater = -2 // TODO - what would be a good error code?
+
+	// TODO - initial default value of 3 minutes total to every retry-later script. Find a good value!
+	retryTotScriptTime time.Duration = 1 * 3 * time.Minute
+
+	// TODO - this should be configureable. i.e. via menderconfig
+	retryTimeoutInterval = 60 * time.Second
+)
+
+// ErrRetryLater returned when a statescript returns retryLater
+var ErrRetryLater = errors.New("retry script later")
 
 type Executor interface {
 	ExecuteAll(state, action string, ignoreError bool) error
@@ -138,8 +153,80 @@ func execute(name string, timeout time.Duration) int {
 	return 0
 }
 
+// TODO - test all functionality related to this
+// RetryLaterContext implements Binary(un)Marshaler
+type RetryLaterContext struct {
+	State          string        `json:"State"`
+	LatestExecTime time.Time     `json:"LatestExecutionTime"`
+	TotDuration    time.Duration `json:"TotalDuration"`
+}
+
+func (rtctx *RetryLaterContext) MarshalBinary() (data []byte, err error) {
+	data, err = json.Marshal(rtctx)
+	return
+}
+
+func (rtctx *RetryLaterContext) UnmarshalBinary(data []byte) error {
+
+	if err := json.Unmarshal(data, rtctx); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+func getRetryLaterContext(db *store.DBStore, scriptName string, newctx *RetryLaterContext) (*RetryLaterContext, error) {
+
+	ctx := &RetryLaterContext{}
+	if err := db.Select(scriptName, ctx); os.IsNotExist(err) {
+		err = db.Update(scriptName, newctx)
+		if err != nil {
+			return &RetryLaterContext{}, err
+		}
+		return newctx, nil
+	} else if err != nil {
+		return &RetryLaterContext{}, err
+	}
+
+	newctx.TotDuration += ctx.TotDuration
+
+	return newctx, nil
+
+}
+
+func handleRetryLaterError(db *store.DBStore, scriptName string, execState string, execTime time.Time) error {
+
+	elapsedTime := time.Since(execTime)
+
+	ctx, err := getRetryLaterContext(db, scriptName, &RetryLaterContext{execState, execTime, elapsedTime})
+	if err != nil {
+		return err
+	}
+
+	if err = db.Update(scriptName, ctx); err != nil {
+		return err
+	}
+
+	if ctx.TotDuration <= retryTotScriptTime {
+
+		return ErrRetryLater
+	}
+
+	return errors.Errorf("statescript: error - retry time limit exceeded for %s", scriptName)
+
+}
+
 func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
 	scr, dir, err := l.get(state, action)
+
+	// db for storing the retry later scripts
+	db := store.NewDBStore("/data/mender")
+	if db == nil {
+		return errors.New("failed to open the database")
+	}
+	defer db.Close()
+
 	if err != nil {
 		if ignoreError {
 			log.Errorf("statescript: ignoring error while executing script: %v", err)
@@ -165,13 +252,25 @@ func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
 
 		timeout := l.getTimeout()
 
+		execTime := time.Now()
+
 		if ret := execute(filepath.Join(dir, s.Name()), timeout); ret != 0 {
+
 			// In case of error scripts all should be executed.
 			if ignoreError {
 				log.Errorf("statescript: ignoring error executing '%s': %d", s.Name(), ret)
+			} else if ret == exitRetryLater {
+				return handleRetryLaterError(db, s.Name(), state, execTime)
 			} else {
 				return errors.Errorf("statescript: error executing '%s': %d",
 					s.Name(), ret)
+			}
+		}
+		// no error executing script -> remove the timer from the retrylater database entry.
+		_, err := db.ReadAll(s.Name())
+		if err == nil { // script has a retry entry in database.
+			if err = db.Remove(s.Name()); err != nil {
+				log.Error("failed to remove script %s from database", s.Name())
 			}
 		}
 	}

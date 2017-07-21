@@ -529,17 +529,50 @@ func shouldTransit(from, to State) bool {
 	return from.Transition() != to.Transition()
 }
 
-func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
-	from := m.GetCurrentState()
-	return m.transitionState(from, to, ctx)
-}
-
 func TransitionError(s State) State {
 	me := NewTransientError(errors.New("error executing state script"))
 	if us, ok := s.(UpdateState); ok {
 		return NewUpdateErrorState(me, us.Update())
 	}
 	return NewErrorState(me)
+}
+
+func handleRetryLater(from, to State, ctx *StateContext, err error) State {
+	if err == statescript.ErrRetryLater {
+		wState := NewWaitState(to.Id(), to.Transition())
+		to, _ := wState.Wait(to, from, 60*time.Second) // TODO - set time from mendeconf(?)
+		// Retry the script that requested a retry
+		return to
+	}
+	return to
+}
+
+func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
+	from := m.GetCurrentState()
+	return m.transitionState(from, to, ctx)
+}
+
+// RetryLaterState implements WaitState and State
+type RetryLaterState struct {
+	WaitState
+	from State
+	err  error
+}
+
+func NewRetryLaterState(from State, err error) State {
+	return &RetryLaterState{
+		WaitState: NewWaitState(MenderStateIdle, ToNone),
+		from:      from,
+		err:       err,
+	}
+}
+
+func (rl *RetryLaterState) Handle(ctx *StateContext, c Controller) (State, bool) {
+
+	log.Debugf("handle retry later state")
+
+	return rl.Wait(NewCheckWaitState(), rl, time.Minute) // TODO - this should be configureable
+
 }
 
 func (m *mender) transitionState(from, to State, ctx *StateContext) (State, bool) {
@@ -557,6 +590,15 @@ func (m *mender) transitionState(from, to State, ctx *StateContext) (State, bool
 			m.SetNextState(to)
 
 			if err := to.Transition().Enter(m.stateScriptExecutor); err != nil {
+
+				if err == statescript.ErrRetryLater {
+					// Returns the same state after a wait, so that
+					// all scripts will be rerun in this case
+					// FIXME - how to handle this?
+					// handleRetryLater(from, to, ctx, err)
+					// m.SetNextState(IdleState)
+					return NewRetryLaterState(from, err), false
+				}
 				// just log error; we can not do anything more
 				log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
 			}
