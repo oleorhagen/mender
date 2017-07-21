@@ -15,6 +15,7 @@ package store
 
 import (
 	"bytes"
+	"encoding"
 	"io"
 	"io/ioutil"
 	"os"
@@ -196,4 +197,25 @@ func (dbw *DBStoreWrite) Close() error {
 
 func (dbw *DBStoreWrite) Commit() error {
 	return dbw.dbs.writeBytes(dbw.name, &dbw.data)
+}
+
+// Update - updates an existing dataentry, or creates a new one if none exists
+func (db *DBStore) Update(key string, val encoding.BinaryMarshaler) error {
+
+	data, err := val.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	return db.WriteAll(key, data)
+}
+
+func (db *DBStore) Get(key string, val encoding.BinaryUnmarshaler) error {
+
+	data, err := db.ReadAll(key)
+	if err != nil {
+		return err
+	}
+
+	return val.UnmarshalBinary(data)
 }

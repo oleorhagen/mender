@@ -572,37 +572,71 @@ func TransitionError(s State, action string) State {
 	return NewErrorState(me)
 }
 
+// RetryLaterState implements WaitState and State
+type RetryLaterState struct {
+	WaitState
+	from State
+	err  error
+}
+
+func NewRetryLaterState(from State, err error) State {
+	return &RetryLaterState{
+		WaitState: NewWaitState(MenderStateIdle, ToNone),
+		from:      from,
+		err:       err,
+	}
+}
+
+func handleRetryLater(from, to State, ctx *StateContext, err error) State {
+	log.Debugf("Handle retry later.")
+	if err == statescript.ErrRetryLater {
+		wState := NewWaitState(to.Id(), to.Transition())
+		to, _ := wState.Wait(to, from, 60*time.Second) // TODO - set time from mendeconf(?)
+		// Retry the script that requested a retry
+		return to
+	}
+	return to
+}
+
+func (rl *RetryLaterState) Handle(ctx *StateContext, c Controller) (State, bool) {
+
+	log.Debugf("handle retry later state")
+
+	return rl.Wait(NewCheckWaitState(), rl, time.Minute) // TODO - this should be configureable
+
+}
+
 func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
+
 	from := m.GetCurrentState()
 
 	log.Infof("State transition: %s [%s] -> %s [%s]",
 		from.Id(), from.Transition().String(),
 		to.Id(), to.Transition().String())
 
-	if to.Transition() == ToNone {
-		to.SetTransition(from.Transition())
+	if to.Transition().IsToError() && !from.Transition().IsToError() {
+		log.Debug("transitioning to error state")
+		// call error scripts
+		from.Transition().Error(m.stateScriptExecutor)
+	} else {
+		// do transition to ordinary state
+		if err := from.Transition().Leave(m.stateScriptExecutor); err != nil {
+
+			handleRetryLater(from, to, ctx, err)
+
+			log.Errorf("error executing leave script for %s state: %v", from.Id(), err)
+			return TransitionError(from, "Leave"), false
+		}
 	}
 
-	if shouldTransit(from, to) {
-		if to.Transition().IsToError() && !from.Transition().IsToError() {
-			log.Debug("transitioning to error state")
-			// call error scripts
-			from.Transition().Error(m.stateScriptExecutor)
-		} else {
-			// do transition to ordinary state
-			if err := from.Transition().Leave(m.stateScriptExecutor); err != nil {
-				log.Errorf("error executing leave script for %s state: %v", from.Id(), err)
-				return TransitionError(from, "Leave"), false
-			}
-		}
+	m.SetNextState(to)
 
-		m.SetNextState(to)
+	if err := to.Transition().Enter(m.stateScriptExecutor); err != nil {
+		log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
 
-		if err := to.Transition().Enter(m.stateScriptExecutor); err != nil {
-			log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
-			// we have not entered to state; so handle from state error
-			return TransitionError(from, "Enter"), false
-		}
+		handleRetryLater(from, to, ctx, err)
+		// we have not entered to state; so handle from state error
+		return TransitionError(from, "Enter"), false
 	}
 
 	m.SetNextState(to)

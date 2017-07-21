@@ -16,6 +16,7 @@ package main
 import (
 	"strings"
 
+	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/statescript"
 	"github.com/pkg/errors"
 )
@@ -88,6 +89,7 @@ func ignoreErrors(t Transition, action string) bool {
 
 // Transition implements statescript.Launcher interface
 func (t Transition) Enter(exec statescript.Executor) error {
+	log.Debugf("transition enter: %s", t.String())
 	if t == ToNone {
 		return nil
 	}
@@ -104,6 +106,7 @@ func (t Transition) Enter(exec statescript.Executor) error {
 }
 
 func (t Transition) Leave(exec statescript.Executor) error {
+	log.Debugf("transition leave: %s", t.String())
 	if t == ToNone {
 		return nil
 	}
@@ -120,6 +123,9 @@ func (t Transition) Leave(exec statescript.Executor) error {
 }
 
 func (t Transition) Error(exec statescript.Executor) error {
+
+	log.Debugf("transition enter: %s", t.String())
+
 	if t == ToNone {
 		return nil
 	}

@@ -21,7 +21,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
+	"github.com/mendersoftware/mender/store"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -204,4 +206,93 @@ func testArtifactArrayEquals(t *testing.T, expected []string, actual []os.FileIn
 	for i, script := range actual {
 		assert.EqualValues(t, expected[i], script.Name())
 	}
+}
+
+func TestRetryLaterContextUnmarshalBinary(t *testing.T) {
+
+	state := "ArtifactInstall_Enter"
+	execTime := time.Now()
+	ctx := &RetryLaterContext{state, execTime, 0}
+	refctx := *ctx // make a copy
+
+	data, err := ctx.MarshalBinary()
+	assert.NoError(t, err)
+
+	newctx := &RetryLaterContext{}
+	err = newctx.UnmarshalBinary(data)
+	assert.NoError(t, err)
+	assert.Equal(t, *newctx, refctx)
+
+}
+
+func TestGetRetryLaterContext(t *testing.T) {
+
+	tdir, err := ioutil.TempDir("", "mendertest")
+	assert.Nil(t, err)
+	defer os.RemoveAll(tdir)
+
+	// setup a dirstore helper to easily access file contents in test dir
+	ds := store.NewDirStore(tdir)
+	assert.NotNil(t, ds)
+
+	db := store.NewDBStore(tdir)
+	defer db.Close()
+	assert.NotNil(t, db)
+
+	tstScript := "somescript"
+	state := "ArtifactInstall_Enter"
+	execTime := time.Now()
+	tstctx := &RetryLaterContext{state, execTime, time.Second}
+	refctx := *tstctx
+
+	// script does not exist in db
+	ctx, err := getRetryLaterContext(db, tstScript, tstctx)
+	assert.NoError(t, err)
+	assert.Equal(t, refctx, *ctx)
+
+	// script exists in db
+	tstctx = &RetryLaterContext{state, time.Now(), time.Second}
+	ctx, err = getRetryLaterContext(db, tstScript, tstctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2*time.Second, ctx.TotDuration)
+
+}
+
+func TestHandleRetryLaterError(t *testing.T) {
+
+	// directory for keeping test data
+	tdir, err := ioutil.TempDir("", "mendertest")
+	defer os.RemoveAll(tdir)
+
+	// setup a dirstore helper to easily access file contents in test dir
+	ds := store.NewDirStore(tdir)
+	assert.NotNil(t, ds)
+
+	db := store.NewDBStore(tdir)
+	defer db.Close()
+	assert.NotNil(t, db)
+
+	tstScript := "testScript"
+
+	execTime := time.Now()
+
+	err = handleRetryLaterError(db, tstScript, "ArtifactInstall_Enter", execTime)
+	assert.Equal(t, ErrRetryLater, err)
+
+	execTime = time.Now().Add(-(retryTotScriptTime - retryTotScriptTime/2))
+
+	// we've only used up half of our retry timeslot
+	err = handleRetryLaterError(db, tstScript, "ArtifactInstall_Enter", execTime)
+	assert.Equal(t, ErrRetryLater, err)
+
+	execTime = time.Now().Add(-(retryTotScriptTime - retryTotScriptTime/2))
+
+	// timeslot all used up
+	err = handleRetryLaterError(db, tstScript, "ArtifactInstall_Enter", execTime)
+	assert.Contains(t, err.Error(), "statescript: error")
+
+	// script has still spent all it's retry-time
+	err = handleRetryLaterError(db, tstScript, "ArtifactInstall_Enter", time.Now())
+	assert.Contains(t, err.Error(), "statescript: error")
+
 }
