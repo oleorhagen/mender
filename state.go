@@ -132,13 +132,16 @@ import (
 //                           (daemon exit)
 //
 
-// state context carrying over data that may be used by all state handlers
+// StateContext state context carrying over data that may be used by all state handlers
 type StateContext struct {
 	// data store access
 	store                store.Store
 	lastUpdateCheck      time.Time
 	lastInventoryUpdate  time.Time
 	fetchInstallAttempts int
+	retryScript          string
+	leaveDone            bool
+	enterDone            bool
 }
 
 type StateRunner interface {

@@ -63,6 +63,7 @@ func (d *menderDaemon) Run() error {
 	cancelled := false
 	for {
 		toState, cancelled = d.mender.TransitionState(toState, &d.sctx)
+		log.Debugf("tostate, cancelled: %s, %t", toState.Id().String(), cancelled)
 
 		if toState.Id() == MenderStateError {
 			es, ok := toState.(*ErrorState)

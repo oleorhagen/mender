@@ -49,16 +49,16 @@ type testExecutor struct {
 	execErrors map[stateScript]bool
 }
 
-func (te *testExecutor) ExecuteAll(state, action string, ignoreError bool) error {
+func (te *testExecutor) ExecuteAll(state, action, retryScript string, ignoreError bool) (error, string) {
 	te.executed = append(te.executed, stateScript{state, action})
 
 	if _, ok := te.execErrors[stateScript{state, action}]; ok {
 		if ignoreError {
-			return nil
+			return nil, ""
 		}
-		return errors.New("error executing script")
+		return errors.New("error executing script"), ""
 	}
-	return nil
+	return nil, ""
 }
 
 func (te *testExecutor) CheckRootfsScriptsVersion() error {
@@ -140,7 +140,7 @@ func TestTransitions(t *testing.T) {
 		mender.stateScriptExecutor = te
 		mender.SetNextState(tt.from)
 
-		s, c := mender.TransitionState(tt.to, nil)
+		s, c := mender.TransitionState(tt.to, &StateContext{})
 		assert.IsType(t, tt.expectedS, s)
 		assert.False(t, c)
 
@@ -168,11 +168,11 @@ type checkIgnoreErrorsExecutor struct {
 	shouldIgnore bool
 }
 
-func (e *checkIgnoreErrorsExecutor) ExecuteAll(state, action string, ignoreError bool) error {
+func (e *checkIgnoreErrorsExecutor) ExecuteAll(state, action, retryScript string, ignoreError bool) (error, string) {
 	if e.shouldIgnore == ignoreError {
-		return nil
+		return nil, ""
 	}
-	return errors.New("should ignore errors, but is not")
+	return errors.New("should ignore errors, but is not"), ""
 }
 
 func (e *checkIgnoreErrorsExecutor) CheckRootfsScriptsVersion() error {
@@ -181,17 +181,18 @@ func (e *checkIgnoreErrorsExecutor) CheckRootfsScriptsVersion() error {
 
 func TestIgnoreErrors(t *testing.T) {
 	e := checkIgnoreErrorsExecutor{false}
+	ctx := &StateContext{}
 	tr := ToArtifactReboot_Leave
-	err := tr.Leave(&e)
+	err := tr.Leave(&e, ctx)
 	assert.NoError(t, err)
 
 	e = checkIgnoreErrorsExecutor{false}
 	tr = ToArtifactCommit
-	err = tr.Enter(&e)
+	err = tr.Enter(&e, ctx)
 	assert.NoError(t, err)
 
 	e = checkIgnoreErrorsExecutor{true}
 	tr = ToIdle
-	err = tr.Enter(&e)
+	err = tr.Enter(&e, ctx)
 	assert.NoError(t, err)
 }

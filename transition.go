@@ -88,7 +88,7 @@ func ignoreErrors(t Transition, action string) bool {
 }
 
 // Transition implements statescript.Launcher interface
-func (t Transition) Enter(exec statescript.Executor) error {
+func (t Transition) Enter(exec statescript.Executor, ctx *StateContext) error {
 	log.Debugf("transition enter: %s", t.String())
 	if t == ToNone {
 		return nil
@@ -99,13 +99,21 @@ func (t Transition) Enter(exec statescript.Executor) error {
 		return nil
 	}
 
-	if err := exec.ExecuteAll(name, "Enter", ignoreErrors(t, "Enter")); err != nil {
+	err, retryScript := exec.ExecuteAll(name, "Enter", ctx.retryScript, ignoreErrors(t, "Enter"))
+	if retryScript != "" {
+		ctx.retryScript = retryScript
+		ctx.enterDone = false
+		return err // retryLaterError
+	}
+	if err != nil {
 		return errors.Wrapf(err, "error running enter state script(s) for %v state", t)
 	}
+	ctx.retryScript = ""
+	ctx.enterDone = true
 	return nil
 }
 
-func (t Transition) Leave(exec statescript.Executor) error {
+func (t Transition) Leave(exec statescript.Executor, ctx *StateContext) error {
 	log.Debugf("transition leave: %s", t.String())
 	if t == ToNone {
 		return nil
@@ -115,10 +123,19 @@ func (t Transition) Leave(exec statescript.Executor) error {
 	if name == "" {
 		return nil
 	}
-
-	if err := exec.ExecuteAll(name, "Leave", ignoreErrors(t, "Leave")); err != nil {
+	err, retryScript := exec.ExecuteAll(name, "Leave", ctx.retryScript, ignoreErrors(t, "Leave"))
+	if retryScript != "" {
+		ctx.retryScript = retryScript
+		ctx.leaveDone = false
+		return err // retryLaterError
+	}
+	if err != nil {
 		return errors.Wrapf(err, "error running leave state script(s) for %v state", t)
 	}
+	// reset ctx booleans
+	ctx.retryScript = ""
+	ctx.leaveDone = true
+	ctx.enterDone = false
 	return nil
 }
 
@@ -135,7 +152,9 @@ func (t Transition) Error(exec statescript.Executor) error {
 		return nil
 	}
 
-	if err := exec.ExecuteAll(name, "Error", true); err != nil {
+	// TODO - does Error need enter/leave scripts?
+	err, _ := exec.ExecuteAll(name, "Error", "", true)
+	if err != nil {
 		return errors.Wrapf(err, "error running error state script(s) for %v state", t)
 	}
 	return nil

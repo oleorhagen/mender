@@ -104,6 +104,8 @@ const (
 	// wait before retrying fetch & install after first failing (timeout,
 	// for example)
 	MenderStateFetchStoreRetryWait
+	// wait, and then retry at a later time, if a script demands it
+	MenderStateRetryLater
 	// varify update
 	MenderStateUpdateVerify
 	// commit needed
@@ -145,6 +147,7 @@ var (
 		MenderStateUpdateStore:         "update-store",
 		MenderStateUpdateInstall:       "update-install",
 		MenderStateFetchStoreRetryWait: "fetch-install-retry-wait",
+		MenderStateRetryLater:          "retry-later",
 		MenderStateUpdateVerify:        "update-verify",
 		MenderStateUpdateCommit:        "update-commit",
 		MenderStateUpdateStatusReport:  "update-status-report",
@@ -575,26 +578,29 @@ func TransitionError(s State, action string) State {
 // RetryLaterState implements WaitState and State
 type RetryLaterState struct {
 	WaitState
+	to   State
 	from State
 	err  error
 }
 
-func NewRetryLaterState(from State, err error) State {
+type RetryLaterError struct {
+}
+
+func NewRetryLaterState(from, to State, t Transition, err error) State {
 	return &RetryLaterState{
-		WaitState: NewWaitState(MenderStateIdle, ToNone),
+		WaitState: NewWaitState(MenderStateRetryLater, t),
 		from:      from,
+		to:        to,
 		err:       err,
 	}
 }
 
-func handleRetryLater(from, to State, ctx *StateContext, err error) State {
-	log.Debugf("Handle retry later.")
-	if err == statescript.ErrRetryLater {
-		wState := NewWaitState(to.Id(), to.Transition())
-		to, _ := wState.Wait(to, from, 60*time.Second) // TODO - set time from mendeconf(?)
-		// Retry the script that requested a retry
-		return to
-	}
+func handleRetryLater(from, to State, enter bool, ctx *StateContext, err error) State {
+	log.Debugf("Handle retry later function.")
+	log.Debugf("to.ID(): %s -> %s to.Transition()")
+	wState := NewWaitState(to.Id(), to.Transition())
+	to, _ = wState.Wait(to, to, 10*time.Second) // make sure the transition is reexecuted TODO - set time from mendeconf(?)
+	// Retry the script that requested a retry
 	return to
 }
 
@@ -602,10 +608,14 @@ func (rl *RetryLaterState) Handle(ctx *StateContext, c Controller) (State, bool)
 
 	log.Debugf("handle retry later state")
 
-	return rl.Wait(NewCheckWaitState(), rl, time.Minute) // TODO - this should be configureable
-
+	log.Debugf("%s -> %s", rl.from.Id(), rl.to.Id())
+	to, cancel := rl.Wait(rl.to, rl.from, 5*time.Second) // todo - this should be configureable
+	log.Debugf("next state from retrylater handle is: %s", to.Id())
+	return to, cancel
 }
 
+// TODO - return the same state when transition does not finish. Then it will be rerun
+// TODO - refactor this thing
 func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 
 	from := m.GetCurrentState()
@@ -614,32 +624,65 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 		from.Id(), from.Transition().String(),
 		to.Id(), to.Transition().String())
 
-	if to.Transition().IsToError() && !from.Transition().IsToError() {
-		log.Debug("transitioning to error state")
-		// call error scripts
-		from.Transition().Error(m.stateScriptExecutor)
-	} else {
+	// if to.Transition().IsToError() && !from.Transition().IsToError() {
+	// 	log.Debug("transitioning to error state")
+	// 	// call error scripts
+	// 	// reset context booleans
+	// 	from.Transition().Error(m.stateScriptExecutor)
+	// } else {
+
+	if !ctx.leaveDone {
 		// do transition to ordinary state
-		if err := from.Transition().Leave(m.stateScriptExecutor); err != nil {
+		err := from.Transition().Leave(m.stateScriptExecutor, ctx)
+		if err != nil {
 
-			handleRetryLater(from, to, ctx, err)
+			if err == statescript.ErrRetryLater {
 
-			log.Errorf("error executing leave script for %s state: %v", from.Id(), err)
+				// intermediate state while waiting for the script to validate
+				// return handleRetryLater(from, to, ctx, err), false
+				log.Debug("error cause is retry-later: Leave")
+				// add the from transition, so that it will be rerun when going
+				// from retry-later -> next-state
+				// In this way the from-leave-scripts will be run
+				to = NewRetryLaterState(from, to, from.Transition(), err)
+				m.SetNextState(to)
+				return to.Handle(ctx, m)
+			}
+
 			return TransitionError(from, "Leave"), false
 		}
 	}
+	// }
 
+	log.Debug("finished with leave transition")
+
+	log.Debugf("Setting next state to: %s", to.Id())
 	m.SetNextState(to)
 
-	if err := to.Transition().Enter(m.stateScriptExecutor); err != nil {
-		log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
+	if !ctx.enterDone {
+		err := to.Transition().Enter(m.stateScriptExecutor, ctx)
+		if err != nil {
 
-		handleRetryLater(from, to, ctx, err)
-		// we have not entered to state; so handle from state error
-		return TransitionError(from, "Enter"), false
+			if errors.Cause(err) == statescript.ErrRetryLater {
+				// log.Debug("error cause is retry-later: Enter")
+				to = NewRetryLaterState(from, to, ToNone, err)
+				m.SetNextState(to)
+				return to.Handle(ctx, m)
+				// return handleRetryLater(from, to, ctx, err), false
+			}
+			// we have not entered to state; so handle from state error
+			return TransitionError(from, "Enter"), false
+		}
 	}
 
-	m.SetNextState(to)
+	log.Debug("Finished with enter transition")
+
+	// TODO - is this needed?
+	// log.Debugf("Setting next state to: %s", to.Id())
+	// m.SetNextState(to)
+
+	// reset state booleans
+	ctx.leaveDone = false
 
 	// execute current state action
 	return to.Handle(ctx, m)

@@ -31,10 +31,10 @@ import (
 )
 
 const (
-	exitRetryLater = -2 // TODO - what would be a good error code?
+	exitRetryLater = 6 // TODO - what would be a good error code?
 
 	// TODO - initial default value of 3 minutes total to every retry-later script. Find a good value!
-	retryTotScriptTime time.Duration = 1 * 3 * time.Minute
+	retryTotScriptTime time.Duration = 10 * time.Second
 
 	// TODO - this should be configureable. i.e. via menderconfig
 	retryTimeoutInterval = 60 * time.Second
@@ -44,7 +44,7 @@ const (
 var ErrRetryLater = errors.New("retry script later")
 
 type Executor interface {
-	ExecuteAll(state, action string, ignoreError bool) error
+	ExecuteAll(state, action, retryScript string, ignoreError bool) (error, string)
 	CheckRootfsScriptsVersion() error
 }
 
@@ -91,7 +91,7 @@ func matchVersion(actual int, supported []int, hasScripts bool) error {
 		"(supported: %v; actual: %v)", supported, actual)
 }
 
-func (l Launcher) get(state, action string) ([]os.FileInfo, string, error) {
+func (l Launcher) get(state, action, retryScript string) ([]os.FileInfo, string, error) {
 
 	sDir := l.ArtScriptsPath
 	if state == "Idle" || state == "Sync" || state == "Download" {
@@ -127,6 +127,17 @@ func (l Launcher) get(state, action string) ([]os.FileInfo, string, error) {
 			// all scripts must be formated like `ArtifactInstall_Enter_05(_wifi-driver)`(optional)
 			re := regexp.MustCompile(`([A-Za-z]+)_(Enter|Leave|Error)_[0-9][0-9](_\S+)?`)
 			if len(file.Name()) == len(re.FindString(file.Name())) {
+				// Script-Sentinel - only append scripts that have not been run
+				log.Debugf("get scriptName: %s, retryLater: %s", file.Name(), retryScript)
+
+				if retryScript != "" {
+					if retryScript == file.Name() {
+						retryScript = "" // set the flag to accept all scripts
+					} else {
+						continue
+					}
+				}
+
 				scripts = append(scripts, file)
 			} else {
 				log.Warningf("script format mismatch: '%s' will not be run ", file.Name())
@@ -177,6 +188,7 @@ func execute(name string, timeout time.Duration) int {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
+		log.Debugf("Error with script %s in start", name)
 		return retCode(err)
 	}
 
@@ -189,8 +201,10 @@ func execute(name string, timeout time.Duration) int {
 	defer timer.Stop()
 
 	if err := cmd.Wait(); err != nil {
+		log.Debugf("Error with script %s in wait, returns %d", name, retCode(err))
 		return retCode(err)
 	}
+	log.Debugf("%s returns 0", name)
 	return 0
 }
 
@@ -237,7 +251,13 @@ func getRetryLaterContext(db *store.DBStore, scriptName string, newctx *RetryLat
 
 }
 
-func handleRetryLaterError(db *store.DBStore, scriptName string, execState string, execTime time.Time) error {
+func handleRetryLaterError(scriptName string, execState string, execTime time.Time) error {
+
+	db := store.NewDBStore("/data/mender")
+	if db == nil {
+		return errors.New("failed to open database")
+	}
+	defer db.Close()
 
 	elapsedTime := time.Since(execTime)
 
@@ -252,34 +272,42 @@ func handleRetryLaterError(db *store.DBStore, scriptName string, execState strin
 
 	if ctx.TotDuration <= retryTotScriptTime {
 
+		log.Debugf("%s spent %d will retry later", scriptName, ctx.TotDuration)
+
 		return ErrRetryLater
+	}
+
+	// since the statemachine will reset on an error, give the script a new timeslot
+	if err = db.Remove(scriptName); err != nil {
+		log.Errorf("Failed to give the script %s a new timeslot", scriptName)
 	}
 
 	return errors.Errorf("statescript: error - retry time limit exceeded for %s", scriptName)
 
 }
 
-func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
-	scr, dir, err := l.get(state, action)
+func (l Launcher) ExecuteAll(state, action, retryScript string, ignoreError bool) (error, string) {
 
-	log.Errorf("In state %s - action %s", state, action)
-	// db for storing the retry later scripts
-	db := store.NewDBStore("/data/mender")
-	if db == nil {
-		return errors.New("failed to open the database")
+	if retryScript != "" {
+		log.Debugf("Retrying script %s", retryScript)
 	}
-	defer db.Close()
+	scr, dir, err := l.get(state, action, retryScript)
+
+	log.Debug(scr)
+
+	log.Debugf("Executing all scripts in state: %s_%s", state, action)
 
 	if err != nil {
 		if ignoreError {
 			log.Errorf("statescript: ignoring error while executing [%s:%s] script: %v",
 				state, action, err)
-			return nil
+			return nil, ""
 		}
-		return err
+		return err, ""
 	}
 
 	execBits := os.FileMode(syscall.S_IXUSR | syscall.S_IXGRP | syscall.S_IXOTH)
+
 	timeout := l.getTimeout()
 
 	for _, s := range scr {
@@ -291,31 +319,33 @@ func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
 				continue
 			} else {
 				return errors.Errorf("statescript: script '%s' is not executable",
-					filepath.Join(dir, s.Name()))
+					filepath.Join(dir, s.Name())), ""
 			}
 		}
 
 		execTime := time.Now()
 
-		if ret := execute(filepath.Join(dir, s.Name()), timeout); ret != 0 {
+		ret := execute(filepath.Join(dir, s.Name()), timeout)
+
+		if ret != 0 {
 
 			// In case of error scripts all should be executed.
 			if ignoreError {
 				log.Errorf("statescript: ignoring error executing '%s': %d", s.Name(), ret)
 			} else if ret == exitRetryLater {
-				return handleRetryLaterError(db, s.Name(), state, execTime)
+				return handleRetryLaterError(s.Name(), state, execTime), s.Name()
 			} else {
 				return errors.Errorf("statescript: error executing '%s': %d",
-					s.Name(), ret)
+					s.Name(), ret), ""
 			}
 		}
-		// no error executing script -> remove the timer from the retrylater database entry.
-		_, err := db.ReadAll(s.Name())
-		if err == nil { // script has a retry entry in database.
-			if err = db.Remove(s.Name()); err != nil {
-				log.Error("failed to remove script %s from database", s.Name())
-			}
-		}
+		// // no error executing script -> remove the timer from the retrylater database entry.
+		// _, err := db.ReadAll(s.Name())
+		// if err == nil { // script has a retry entry in database.
+		// 	if err = db.Remove(s.Name()); err != nil {
+		// 		log.Error("failed to remove script %s from database", s.Name())
+		// 	}
+		// }
 	}
-	return nil
+	return nil, ""
 }
