@@ -128,8 +128,6 @@ func (l Launcher) get(state, action, retryScript string) ([]os.FileInfo, string,
 			re := regexp.MustCompile(`([A-Za-z]+)_(Enter|Leave|Error)_[0-9][0-9](_\S+)?`)
 			if len(file.Name()) == len(re.FindString(file.Name())) {
 				// Script-Sentinel - only append scripts that have not been run
-				log.Debugf("get scriptName: %s, retryLater: %s", file.Name(), retryScript)
-
 				if retryScript != "" {
 					if retryScript == file.Name() {
 						retryScript = "" // set the flag to accept all scripts
@@ -208,8 +206,6 @@ func execute(name string, timeout time.Duration) int {
 	return 0
 }
 
-// TODO - test all functionality related to this
-// RetryLaterContext implements Binary(un)Marshaler
 type RetryLaterContext struct {
 	State          string        `json:"State"`
 	LatestExecTime time.Time     `json:"LatestExecutionTime"`
@@ -251,13 +247,7 @@ func getRetryLaterContext(db *store.DBStore, scriptName string, newctx *RetryLat
 
 }
 
-func handleRetryLaterError(scriptName string, execState string, execTime time.Time) error {
-
-	db := store.NewDBStore("/data/mender")
-	if db == nil {
-		return errors.New("failed to open database")
-	}
-	defer db.Close()
+func handleRetryLaterError(db *store.DBStore, scriptName string, execState string, execTime time.Time) error {
 
 	elapsedTime := time.Since(execTime)
 
@@ -288,14 +278,16 @@ func handleRetryLaterError(scriptName string, execState string, execTime time.Ti
 
 func (l Launcher) ExecuteAll(state, action, retryScript string, ignoreError bool) (error, string) {
 
+	db := store.NewDBStore("/data/mender")
+	if db == nil {
+		return errors.New("failed to open database"), ""
+	}
+	defer db.Close()
+
 	if retryScript != "" {
 		log.Debugf("Retrying script %s", retryScript)
 	}
 	scr, dir, err := l.get(state, action, retryScript)
-
-	log.Debug(scr)
-
-	log.Debugf("Executing all scripts in state: %s_%s", state, action)
 
 	if err != nil {
 		if ignoreError {
@@ -333,19 +325,17 @@ func (l Launcher) ExecuteAll(state, action, retryScript string, ignoreError bool
 			if ignoreError {
 				log.Errorf("statescript: ignoring error executing '%s': %d", s.Name(), ret)
 			} else if ret == exitRetryLater {
-				return handleRetryLaterError(s.Name(), state, execTime), s.Name()
+				return handleRetryLaterError(db, s.Name(), state, execTime), s.Name()
 			} else {
 				return errors.Errorf("statescript: error executing '%s': %d",
 					s.Name(), ret), ""
 			}
+		} else if ret == 0 && retryScript != "" {
+			// retry-script succeeded - remove
+			if err = db.Remove(retryScript); err != nil {
+				log.Errorf("Failed to give the script %s a new timeslot", retryScript)
+			}
 		}
-		// // no error executing script -> remove the timer from the retrylater database entry.
-		// _, err := db.ReadAll(s.Name())
-		// if err == nil { // script has a retry entry in database.
-		// 	if err = db.Remove(s.Name()); err != nil {
-		// 		log.Error("failed to remove script %s from database", s.Name())
-		// 	}
-		// }
 	}
 	return nil, ""
 }

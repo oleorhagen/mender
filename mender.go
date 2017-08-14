@@ -608,9 +608,7 @@ func (rl *RetryLaterState) Handle(ctx *StateContext, c Controller) (State, bool)
 
 	log.Debugf("handle retry later state")
 
-	log.Debugf("%s -> %s", rl.from.Id(), rl.to.Id())
-	to, cancel := rl.Wait(rl.to, rl.from, 5*time.Second) // todo - this should be configureable
-	log.Debugf("next state from retrylater handle is: %s", to.Id())
+	to, cancel := rl.Wait(rl.to, rl.from, 15*time.Second) // todo - this should be configureable
 	return to, cancel
 }
 
@@ -624,35 +622,33 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 		from.Id(), from.Transition().String(),
 		to.Id(), to.Transition().String())
 
-	// if to.Transition().IsToError() && !from.Transition().IsToError() {
-	// 	log.Debug("transitioning to error state")
-	// 	// call error scripts
-	// 	// reset context booleans
-	// 	from.Transition().Error(m.stateScriptExecutor)
-	// } else {
+	if to.Transition().IsToError() && !from.Transition().IsToError() {
+		log.Debug("transitioning to error state")
+		// call error scripts
+		// reset context booleans
+		from.Transition().Error(m.stateScriptExecutor)
+	} else {
 
-	if !ctx.leaveDone {
-		// do transition to ordinary state
-		err := from.Transition().Leave(m.stateScriptExecutor, ctx)
-		if err != nil {
+		if !ctx.leaveDone {
+			// do transition to ordinary state
+			err := from.Transition().Leave(m.stateScriptExecutor, ctx)
+			if err != nil {
 
-			if err == statescript.ErrRetryLater {
+				if err == statescript.ErrRetryLater {
 
-				// intermediate state while waiting for the script to validate
-				// return handleRetryLater(from, to, ctx, err), false
-				log.Debug("error cause is retry-later: Leave")
-				// add the from transition, so that it will be rerun when going
-				// from retry-later -> next-state
-				// In this way the from-leave-scripts will be run
-				to = NewRetryLaterState(from, to, from.Transition(), err)
-				m.SetNextState(to)
-				return to.Handle(ctx, m)
+					// intermediate state while waiting for the script to validate
+					// adds the from transition, so that it will be rerun when going
+					// from retry-later -> next-state
+					// In this way the from-leave-scripts will be run
+					to = NewRetryLaterState(from, to, from.Transition(), err)
+					m.SetNextState(to)
+					return to.Handle(ctx, m)
+				}
+
+				return TransitionError(from, "Leave"), false
 			}
-
-			return TransitionError(from, "Leave"), false
 		}
 	}
-	// }
 
 	log.Debug("finished with leave transition")
 
@@ -677,11 +673,7 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 
 	log.Debug("Finished with enter transition")
 
-	// TODO - is this needed?
-	// log.Debugf("Setting next state to: %s", to.Id())
-	// m.SetNextState(to)
-
-	// reset state booleans
+	// reset
 	ctx.leaveDone = false
 
 	// execute current state action

@@ -132,7 +132,7 @@ func (t Transition) Leave(exec statescript.Executor, ctx *StateContext) error {
 	if err != nil {
 		return errors.Wrapf(err, "error running leave state script(s) for %v state", t)
 	}
-	// reset ctx booleans
+	// prepare the next transition
 	ctx.retryScript = ""
 	ctx.leaveDone = true
 	ctx.enterDone = false
