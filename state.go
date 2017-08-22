@@ -139,6 +139,9 @@ type StateContext struct {
 	lastUpdateCheck      time.Time
 	lastInventoryUpdate  time.Time
 	fetchInstallAttempts int
+	retryScript          string
+	enterDone            bool
+	leaveDone            bool
 }
 
 type StateRunner interface {

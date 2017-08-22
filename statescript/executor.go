@@ -179,7 +179,7 @@ func execute(name string, timeout time.Duration) int {
 	return 0
 }
 
-func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
+func (l Launcher) ExecuteAll(state, action, retryScript string, ignoreError bool) error {
 	scr, dir, err := l.get(state, action)
 	if err != nil {
 		if ignoreError {
@@ -194,6 +194,11 @@ func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
 	timeout := l.getTimeout()
 
 	for _, s := range scr {
+		// since scripts are always returned in sorted order, we can
+		// loop until we can resume the script that was running before an unexpected shutdown
+		if retryScript != "" && s.Name() != retryScript {
+			continue
+		}
 		// check if script is executable
 		if s.Mode()&execBits == 0 {
 			if ignoreError {
