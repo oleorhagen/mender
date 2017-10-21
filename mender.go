@@ -82,54 +82,54 @@ type MenderState int
 
 const (
 	// initial state
-	MenderStateInit MenderState = iota
+	MenderStateInit MenderState = iota // TODO
 	// idle state; waiting for transition to the new state
-	MenderStateIdle
+	MenderStateIdle // DONE
 	// client is bootstrapped, i.e. ready to go
-	MenderStateAuthorize
+	MenderStateAuthorize // DONE
 	// wait before authorization attempt
-	MenderStateAuthorizeWait
+	MenderStateAuthorizeWait // DONE
 	// inventory update
-	MenderStateInventoryUpdate
+	MenderStateInventoryUpdate // DONE
 	// wait for new update or inventory sending
-	MenderStateCheckWait
+	MenderStateCheckWait // DONE
 	// check update
-	MenderStateUpdateCheck
+	MenderStateUpdateCheck // DONE
 	// update fetch
-	MenderStateUpdateFetch
+	MenderStateUpdateFetch // TODO (update)
 	// update store
-	MenderStateUpdateStore
+	MenderStateUpdateStore // TODO (io.ReadCloser, size int, update) io.Readcloser is a mender.api instance
 	// install update
-	MenderStateUpdateInstall
+	MenderStateUpdateInstall // TODO (update)
 	// wait before retrying fetch & install after first failing (timeout,
 	// for example)
-	MenderStateFetchStoreRetryWait
+	MenderStateFetchStoreRetryWait // TODO (from State, update, err error)
 	// varify update
-	MenderStateUpdateVerify
+	MenderStateUpdateVerify // TODO (update)
 	// commit needed
-	MenderStateUpdateCommit
+	MenderStateUpdateCommit // TODO (update)
 	// status report
-	MenderStateUpdateStatusReport
+	MenderStateUpdateStatusReport // TODO (update, client.StatusSuccess/ status string)
 	// wait before retrying sending either report or deployment logs
-	MenderStatusReportRetryState
+	MenderStatusReportRetryState // TODO (reportState State, update, status, tries, int)
 	// error reporting status
-	MenderStateReportStatusError
+	MenderStateReportStatusError // TODO (update, status)
 	// reboot
-	MenderStateReboot
+	MenderStateReboot // TODO (update)
 	// first state after booting device after rollback reboot
-	MenderStateAfterReboot
+	MenderStateAfterReboot // TODO (update)
 	//rollback
-	MenderStateRollback
+	MenderStateRollback // TODO (update, swappartitions, doReboot bool)
 	// reboot after rollback
-	MenderStateRollbackReboot
+	MenderStateRollbackReboot // TODO (update)
 	// first state after booting device after rollback reboot
-	MenderStateAfterRollbackReboot
+	MenderStateAfterRollbackReboot // TODO (update)
 	// error
-	MenderStateError
+	MenderStateError // TODO (err menderError)
 	// update error
-	MenderStateUpdateError
+	MenderStateUpdateError // TODO (err menderError, update)
 	// exit state
-	MenderStateDone
+	MenderStateDone // TODO
 )
 
 var (
@@ -162,6 +162,7 @@ var (
 )
 
 func (m MenderState) MarshalJSON() ([]byte, error) {
+	log.Debugf("Marshal MenderState: ")
 	n, ok := stateNames[m]
 	if !ok {
 		return nil, fmt.Errorf("marshal error; unknown state %v", m)
@@ -174,6 +175,7 @@ func (m MenderState) String() string {
 }
 
 func (m *MenderState) UnmarshalJSON(data []byte) error {
+	log.Debugf("Unmarshal MenderState: %v", data)
 	var s string
 	err := json.Unmarshal(data, &s)
 	if err != nil {

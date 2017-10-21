@@ -164,6 +164,8 @@ type StateData struct {
 	UpdateStatus string
 	// TransitionStatus
 	TransitionStatus TransitionStatus
+	// updateError
+	MError menderError
 }
 
 const (
@@ -325,12 +327,28 @@ type IdleState struct {
 }
 
 func (i *IdleState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	sd, err := LoadStateData(ctx.store)
+	if err != nil {
+		log.Errorf("Failed to load state data")
+	}
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
+	sd.FromState = i.Id()
+
 	// check if client is authorized
 	if c.IsAuthorized() {
+		sd.ToState = checkWaitState.Id()
+		sd.TransitionStatus = StateDone
+		if err = StoreStateData(ctx.store, sd); err != nil {
+			log.Errorf("Failed to load state data")
+		}
 		return checkWaitState, false
+	}
+	sd.ToState = authorizeState.Id()
+	sd.TransitionStatus = StateDone
+	if err = StoreStateData(ctx.store, sd); err != nil {
+		log.Errorf("Failed to load state data")
 	}
 	return authorizeState, false
 }
@@ -397,11 +415,23 @@ func NewAuthorizeWaitState() State {
 }
 
 func (a *AuthorizeWaitState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	sd, err := LoadStateData(ctx.store)
+	if err != nil {
+		log.Errorf("Failed to load state data")
+	}
+
 	log.Debugf("handle authorize wait state")
 	intvl := c.GetRetryPollInterval()
 
 	log.Debugf("wait %v before next authorization attempt", intvl)
-	return a.Wait(authorizeState, a, intvl)
+	nxt, cancel := a.Wait(authorizeState, a, intvl)
+	sd.FromState = a.Id()
+	sd.ToState = nxt.Id()
+	sd.TransitionStatus = StateDone // TODO - is this supposed to be NoStatus?
+	if err = StoreStateData(ctx.store, sd); err != nil {
+		log.Errorf("Failed to load state data")
+	}
+	return nxt, cancel
 }
 
 type AuthorizeState struct {
@@ -409,6 +439,13 @@ type AuthorizeState struct {
 }
 
 func (a *AuthorizeState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	sd, err := LoadStateData(ctx.store)
+	if err != nil {
+		log.Errorf("Failed to load state data")
+	}
+	sd.FromState = a.Id()
+	sd.TransitionStatus = NoStatus
+
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
@@ -416,9 +453,21 @@ func (a *AuthorizeState) Handle(ctx *StateContext, c Controller) (State, bool) {
 	if err := c.Authorize(); err != nil {
 		log.Errorf("authorize failed: %v", err)
 		if !err.IsFatal() {
+			sd.ToState = authorizeWaitState.Id()
+			if err := StoreStateData(ctx.store, sd); err != nil {
+				log.Errorf("Failed to load state data")
+			}
 			return authorizeWaitState, false
 		}
+		sd.ToState = NewErrorState(err).Id()
+		if err := StoreStateData(ctx.store, sd); err != nil {
+			log.Errorf("Failed to load state data")
+		}
 		return NewErrorState(err), false
+	}
+	sd.ToState = checkWaitState.Id()
+	if err = StoreStateData(ctx.store, sd); err != nil {
+		log.Errorf("Failed to load state data")
 	}
 	// if everything is OK we should let Mender figure out what to do
 	// in MenderStateCheckWait state
@@ -532,6 +581,14 @@ type UpdateCheckState struct {
 }
 
 func (u *UpdateCheckState) Handle(ctx *StateContext, c Controller) (State, bool) {
+
+	sd, errLoad := LoadStateData(ctx.store)
+	if errLoad != nil {
+		log.Errorf("Failed to load state data")
+	}
+	sd.FromState = u.Id()
+	sd.TransitionStatus = NoStatus
+
 	log.Debugf("handle update check state")
 	ctx.lastUpdateCheck = time.Now()
 
@@ -541,15 +598,37 @@ func (u *UpdateCheckState) Handle(ctx *StateContext, c Controller) (State, bool)
 		if err.Cause() == os.ErrExist {
 			// We are already running image which we are supposed to install.
 			// Just report successful update and return to normal operations.
-			return NewUpdateStatusReportState(*update, client.StatusAlreadyInstalled), false
+
+			nxt := NewUpdateStatusReportState(*update, client.StatusAlreadyInstalled)
+			sd.ToState = nxt.Id()
+			if err := StoreStateData(ctx.store, sd); err != nil {
+				log.Errorf("Failed to load state data")
+			}
+			return nxt, false
 		}
 
 		log.Errorf("update check failed: %s", err)
-		return NewErrorState(err), false
+		nxt := NewErrorState(err)
+		sd.ToState = nxt.Id()
+		sd.MError = err
+		if err := StoreStateData(ctx.store, sd); err != nil {
+			log.Errorf("Failed to load state data")
+		}
+		return nxt, false
 	}
 
 	if update != nil {
-		return NewUpdateFetchState(*update), false
+		nxt := NewUpdateFetchState(*update)
+		sd.ToState = nxt.Id()
+		sd.UpdateInfo = *update
+		if err := StoreStateData(ctx.store, sd); err != nil {
+			log.Errorf("Failed to load state data")
+		}
+		return nxt, false
+	}
+	sd.ToState = checkWaitState.Id()
+	if err := StoreStateData(ctx.store, sd); err != nil {
+		log.Errorf("Failed to load state data")
 	}
 	return checkWaitState, false
 }
@@ -740,6 +819,13 @@ func NewCheckWaitState() State {
 }
 
 func (cw *CheckWaitState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	sd, err := LoadStateData(ctx.store)
+	if err != nil {
+		log.Errorf("Failed to load state data")
+	}
+
+	sd.FromState = cw.Id()
+	sd.TransitionStatus = NoStatus
 
 	log.Debugf("handle check wait state")
 
@@ -777,7 +863,17 @@ func (cw *CheckWaitState) Handle(ctx *StateContext, c Controller) (State, bool) 
 	if next.when.After(time.Now()) {
 		wait := next.when.Sub(now)
 		log.Debugf("waiting %s for the next state", wait)
-		return cw.Wait(next.state, cw, wait)
+		nxt, cancel := cw.Wait(next.state, cw, wait)
+		sd.ToState = nxt.Id()
+		if err = StoreStateData(ctx.store, sd); err != nil {
+			log.Errorf("Failed to load state data")
+		}
+		return nxt, cancel
+
+	}
+	sd.ToState = next.state.Id()
+	if err = StoreStateData(ctx.store, sd); err != nil {
+		log.Errorf("Failed to load state data")
 	}
 
 	log.Debugf("check wait returned: %v", next.state)
@@ -790,13 +886,22 @@ type InventoryUpdateState struct {
 
 func (iu *InventoryUpdateState) Handle(ctx *StateContext, c Controller) (State, bool) {
 
+	sd, err := LoadStateData(ctx.store)
+	if err != nil {
+		log.Errorf("Failed to load state data")
+	}
+	sd.FromState = iu.Id()
+	sd.ToState = checkWaitState.Id()
+
 	ctx.lastInventoryUpdate = time.Now()
 
-	err := c.InventoryRefresh()
-	if err != nil {
+	if err = c.InventoryRefresh(); err != nil {
 		log.Warnf("failed to refresh inventory: %v", err)
 	} else {
 		log.Debugf("inventory refresh complete")
+	}
+	if err = StoreStateData(ctx.store, sd); err != nil {
+		log.Errorf("Failed to load state data")
 	}
 	return checkWaitState, false
 }
