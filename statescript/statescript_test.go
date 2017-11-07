@@ -18,12 +18,15 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/mendersoftware/log"
+	"github.com/mendersoftware/mender/client"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -104,6 +107,30 @@ func TestExecutor(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(tmpArt)
 
+	responder := &struct {
+		httpStatus int
+		reqdata    [][]byte
+		path       string
+	}{
+		http.StatusOK,
+		[][]byte{},
+		"",
+	}
+
+	// Test server that always responds with 200 code
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(responder.httpStatus)
+
+		reqdata, _ := ioutil.ReadAll(r.Body)
+		responder.reqdata = append(responder.reqdata, reqdata)
+		responder.path = r.URL.Path
+	}))
+	defer ts.Close()
+
+	ac, err := client.NewApiClient(client.Config{ServerCert: "../client/server.crt", IsHttps: true, NoVerify: false})
+	assert.NotNil(t, ac)
+	assert.NoError(t, err)
+
 	// array for holding the created scripts, used for comparing to the returned scripts from exec get
 	// all scripts must be formated like `ArtifactInstall_Enter_05(_wifi-driver)`(optional)
 	// in order for them to be executed
@@ -148,34 +175,43 @@ func TestExecutor(t *testing.T) {
 	assert.Equal(t, "Download_Enter_00", s[0].Name())
 
 	// now, let's try to execute some scripts
-	err = e.ExecuteAll("Download", "Enter", false)
+	err = e.ExecuteAll("Download", "Enter", false, ac, ts.URL)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "is not executable")
 
 	// now the same as above, but we are ignoring errors
-	err = e.ExecuteAll("Download", "Enter", true)
+	err = e.ExecuteAll("Download", "Enter", true, ac, ts.URL)
 	assert.NoError(t, err)
 
 	// no version file, but we are ignoring errors
-	err = e.ExecuteAll("ArtifactInstall", "Leave", true)
+	err = e.ExecuteAll("ArtifactInstall", "Leave", true, ac, ts.URL)
 	assert.NoError(t, err)
 
 	store = NewStore(tmpArt)
 	err = store.Finalize(2)
 	assert.NoError(t, err)
-	err = e.ExecuteAll("ArtifactInstall", "Leave", false)
+	err = e.ExecuteAll("ArtifactInstall", "Leave", false, ac, ts.URL)
 	assert.NoError(t, err)
 
 	// add a script that will fail
 	_, err = createArtifactTestScript(tmpArt, "ArtifactInstall_Leave_02", "#!/bin/bash \nfalse")
 
-	err = e.ExecuteAll("ArtifactInstall", "Leave", false)
+	err = e.ExecuteAll("ArtifactInstall", "Leave", false, ac, ts.URL)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "error executing")
+	assert.JSONEq(t, `{"client_state": "ArtifactInstall_Leave", "script_name": "ArtifactInstall_Leave_02", "script_status": "started"}`, string(responder.reqdata[0]))
+	assert.JSONEq(t, `{"client_state": "ArtifactInstall_Leave", "script_name": "ArtifactInstall_Leave_02", "script_status": "error"}`, string(responder.reqdata[1]))
+
+	responder.reqdata = [][]byte{}
 
 	// the same as above, but we are ignoring errors
-	err = e.ExecuteAll("ArtifactInstall", "Leave", true)
+	err = e.ExecuteAll("ArtifactInstall", "Leave", true, ac, ts.URL)
 	assert.NoError(t, err)
+	assert.NotNil(t, responder.reqdata)
+	assert.JSONEq(t, `{"client_state": "ArtifactInstall_Leave", "script_name": "ArtifactInstall_Leave_02", "script_status": "started"}`, string(responder.reqdata[0]))
+	assert.JSONEq(t, `{"client_state": "ArtifactInstall_Leave", "script_name": "ArtifactInstall_Leave_02", "script_status": "error"}`, string(responder.reqdata[1]))
+
+	responder.reqdata = [][]byte{}
 
 	// Add a script that does not satisfy the format required
 	// Thus it should not be added to the script array
@@ -183,15 +219,19 @@ func TestExecutor(t *testing.T) {
 	assert.NoError(t, err)
 
 	sysInstallScripts, _, err := e.get("ArtifactInstall", "Leave")
-	testArtifactArrayEquals(t, scriptArr[1:2], sysInstallScripts)
-
 	assert.NoError(t, err)
+	testArtifactArrayEquals(t, scriptArr[1:2], sysInstallScripts)
 
 	// Add a script that does satisfy the full format required
 	_, err = createArtifactTestScript(tmpArt, "ArtifactInstall_Leave_10_wifi-driver", "#!/bin/bash \ntrue")
 	sysInstallScripts, _, err = e.get("ArtifactInstall", "Leave")
 	testArtifactArrayEquals(t, scriptArr[1:], sysInstallScripts)
 	assert.NoError(t, err)
+
+	err = e.ExecuteAll("ArtifactInstall", "Leave", true, ac, ts.URL)
+	// assert.NoError(t, err)
+	assert.JSONEq(t, `{"client_state": "ArtifactInstall_Leave", "script_name": "ArtifactInstall_Leave_10_wifi-driver", "script_status": "started"}`, string(responder.reqdata[2]))
+	assert.JSONEq(t, `{"client_state": "ArtifactInstall_Leave", "script_name": "ArtifactInstall_Leave_10_wifi-driver", "script_status": "finished"}`, string(responder.reqdata[3]))
 
 	// Test script logging
 	var buf bytes.Buffer

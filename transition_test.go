@@ -15,8 +15,12 @@ package main
 
 import (
 	"errors"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/mendersoftware/mender/client"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -49,7 +53,7 @@ type testExecutor struct {
 	execErrors map[stateScript]bool
 }
 
-func (te *testExecutor) ExecuteAll(state, action string, ignoreError bool) error {
+func (te *testExecutor) ExecuteAll(state, action string, ignoreError bool, req client.ApiRequester, serverURL string) error {
 	te.executed = append(te.executed, stateScript{state, action})
 
 	if _, ok := te.execErrors[stateScript{state, action}]; ok {
@@ -90,25 +94,52 @@ func (te *testExecutor) verifyExecuted(should []stateScript) bool {
 }
 
 func TestTransitions(t *testing.T) {
-	mender, err := NewMender(menderConfig{}, MenderPieces{})
+
+	responder := &struct {
+		httpStatus int
+		reqdata    [][]byte
+		path       string
+	}{
+		http.StatusOK,
+		[][]byte{},
+		"",
+	}
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(responder.httpStatus)
+
+		data, _ := ioutil.ReadAll(r.Body)
+		responder.reqdata = append(responder.reqdata, data)
+		responder.path = r.URL.Path
+	}))
+	defer ts.Close()
+
+	mender, err := NewMender(menderConfig{ServerURL: ts.URL, ServerCertificate: "client/server.crt"}, MenderPieces{})
 	assert.NoError(t, err)
 
 	tc := []struct {
-		from      *testState
-		to        *testState
-		expectedT []stateScript
-		expectedS State
+		from            *testState
+		to              *testState
+		expectedT       []stateScript
+		expectedS       State
+		expectedRequest [][]byte
 	}{
 		{from: &testState{t: ToIdle},
 			to:        &testState{t: ToSync, next: initState},
 			expectedT: []stateScript{{"Idle", "Leave"}, {"Sync", "Enter"}},
 			expectedS: &InitState{},
+			expectedRequest: [][]byte{
+				[]byte(`{"client_state":"Sync","script_status":"state-entered"}`),
+				[]byte(`{"client_state":"Sync","script_status":"state-finished"}`)},
 		},
 		// idle error should have no effect
 		{from: &testState{t: ToIdle, shouldErrorLeave: true},
 			to:        &testState{t: ToSync, next: initState},
 			expectedT: []stateScript{{"Idle", "Leave"}, {"Sync", "Enter"}},
 			expectedS: &InitState{},
+			expectedRequest: [][]byte{
+				[]byte(`{"client_state":"Sync","script_status":"state-entered"}`),
+				[]byte(`{"client_state":"Sync","script_status":"state-finished"}`)},
 		},
 		{from: &testState{t: ToIdle},
 			to:        &testState{t: ToSync, shouldErrorEnter: true, next: initState},
@@ -124,6 +155,9 @@ func TestTransitions(t *testing.T) {
 			to:        &testState{t: ToIdle, next: initState},
 			expectedT: []stateScript{{"Error", "Leave"}, {"Idle", "Enter"}},
 			expectedS: &InitState{},
+			expectedRequest: [][]byte{
+				[]byte(`{"client_state":"Idle","script_status":"state-entered"}`),
+				[]byte(`{"client_state":"Idle","script_status":"state-finished"}`)},
 		},
 	}
 
@@ -141,6 +175,11 @@ func TestTransitions(t *testing.T) {
 		mender.SetNextState(tt.from)
 
 		s, c := mender.TransitionState(tt.to, nil)
+		if tt.expectedRequest != nil {
+			assert.JSONEq(t, string(tt.expectedRequest[0]), string(responder.reqdata[0]))
+			assert.JSONEq(t, string(tt.expectedRequest[1]), string(responder.reqdata[1]))
+			responder.reqdata = [][]byte{} // reset the server data
+		}
 		assert.IsType(t, tt.expectedS, s)
 		assert.False(t, c)
 
@@ -168,7 +207,7 @@ type checkIgnoreErrorsExecutor struct {
 	shouldIgnore bool
 }
 
-func (e *checkIgnoreErrorsExecutor) ExecuteAll(state, action string, ignoreError bool) error {
+func (e *checkIgnoreErrorsExecutor) ExecuteAll(state, action string, ignoreError bool, req client.ApiRequester, serverURL string) error {
 	if e.shouldIgnore == ignoreError {
 		return nil
 	}
@@ -182,16 +221,19 @@ func (e *checkIgnoreErrorsExecutor) CheckRootfsScriptsVersion() error {
 func TestIgnoreErrors(t *testing.T) {
 	e := checkIgnoreErrorsExecutor{false}
 	tr := ToArtifactReboot_Leave
-	err := tr.Leave(&e)
+
+	ac, err := client.NewApiClient(client.Config{})
+	assert.NoError(t, err)
+	err = tr.Leave(&e, ac.Request("authtoken"), "http://server.com") // dummy request and server
 	assert.NoError(t, err)
 
 	e = checkIgnoreErrorsExecutor{false}
 	tr = ToArtifactCommit
-	err = tr.Enter(&e)
+	err = tr.Enter(&e, ac.Request("authtoken"), "http://server.com") // dummy request and server
 	assert.NoError(t, err)
 
 	e = checkIgnoreErrorsExecutor{true}
 	tr = ToIdle
-	err = tr.Enter(&e)
+	err = tr.Enter(&e, ac.Request("authtoken"), "http://server.com") // dummy request and server
 	assert.NoError(t, err)
 }

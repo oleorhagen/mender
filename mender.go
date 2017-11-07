@@ -589,10 +589,10 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 		if to.Transition().IsToError() && !from.Transition().IsToError() {
 			log.Debug("transitioning to error state")
 			// call error scripts
-			from.Transition().Error(m.stateScriptExecutor)
+			from.Transition().Error(m.stateScriptExecutor, m.api.Request(m.authToken), m.config.ServerURL)
 		} else {
 			// do transition to ordinary state
-			if err := from.Transition().Leave(m.stateScriptExecutor); err != nil {
+			if err := from.Transition().Leave(m.stateScriptExecutor, m.api.Request(m.authToken), m.config.ServerURL); err != nil {
 				log.Errorf("error executing leave script for %s state: %v", from.Id(), err)
 				return TransitionError(from, "Leave"), false
 			}
@@ -600,7 +600,7 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 
 		m.SetNextState(to)
 
-		if err := to.Transition().Enter(m.stateScriptExecutor); err != nil {
+		if err := to.Transition().Enter(m.stateScriptExecutor, m.api.Request(m.authToken), m.config.ServerURL); err != nil {
 			log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
 			// we have not entered to state; so handle from state error
 			return TransitionError(from, "Enter"), false
@@ -609,8 +609,28 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 
 	m.SetNextState(to)
 
+	uc := client.NewUpdateStatus()
+
+	// Start of state report to the server
+	if err := uc.Submit(m.api.Request(m.authToken), m.config.ServerURL,
+		client.UpdateStatusData{State: to.Transition().String(),
+			Status: client.StateEntered,
+		}); err != nil {
+		log.Errorf("Failed to submit state to the server: %v", err)
+	}
+
 	// execute current state action
-	return to.Handle(ctx, m)
+	nextState, cancel := to.Handle(ctx, m)
+
+	// End of state report to the server
+	if err := uc.Submit(m.api.Request(m.authToken), m.config.ServerURL,
+		client.UpdateStatusData{State: to.Transition().String(),
+			Status: client.StateFinished,
+		}); err != nil {
+		log.Errorf("Failed to submit state to the server: %v", err)
+	}
+
+	return nextState, cancel
 }
 
 func (m *mender) InventoryRefresh() error {

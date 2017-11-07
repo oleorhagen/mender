@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mendersoftware/log"
+	"github.com/mendersoftware/mender/client"
 	"github.com/pkg/errors"
 )
 
@@ -39,7 +40,7 @@ const (
 )
 
 type Executor interface {
-	ExecuteAll(state, action string, ignoreError bool) error
+	ExecuteAll(state, action string, ignoreError bool, req client.ApiRequester, serverURL string) error
 	CheckRootfsScriptsVersion() error
 }
 
@@ -282,7 +283,11 @@ func executeScript(s os.FileInfo, dir string, l Launcher, timeout time.Duration,
 	}
 }
 
-func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
+func (l Launcher) ExecuteAll(state, action string, ignoreError bool, req client.ApiRequester, serverURL string) error {
+
+	stateString := strings.Join([]string{state, action}, "_")
+	uc := client.NewUpdateStatus()
+
 	scr, dir, err := l.get(state, action)
 	if err != nil {
 		if ignoreError {
@@ -297,6 +302,7 @@ func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
 	timeout := l.getTimeout()
 
 	for _, s := range scr {
+
 		// check if script is executable
 		if s.Mode()&execBits == 0 {
 			if ignoreError {
@@ -310,9 +316,20 @@ func (l Launcher) ExecuteAll(state, action string, ignoreError bool) error {
 		}
 
 		log.Debugf("executing script: %s", s.Name())
+		// notify server that we are executing the script
+		if err = uc.Submit(req, serverURL, client.UpdateStatusData{State: stateString, ScriptName: s.Name(), Status: client.ScriptStarted}); err != nil {
+			log.Errorf("Failed to submit script execution status to the server")
+		}
 		if err = executeScript(s, dir, l, timeout, ignoreError); err != nil {
+			if err = uc.Submit(req, serverURL, client.UpdateStatusData{State: stateString, ScriptName: s.Name(), Status: client.ScriptError}); err != nil {
+				log.Errorf("Failed to submit script execution status to the server")
+			}
 			return err
 		}
+		if err = uc.Submit(req, serverURL, client.UpdateStatusData{State: stateString, ScriptName: s.Name(), Status: client.ScriptFinished}); err != nil {
+			log.Errorf("Failed to submit script execution status to the server")
+		}
+
 	}
 	return nil
 }

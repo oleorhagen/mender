@@ -443,7 +443,7 @@ func TestMenderAuthorize(t *testing.T) {
 	assert.False(t, srv.Auth.Called)
 	assert.Equal(t, atok, mender.authToken)
 
-	// 2. pretend caching of authorization code fails
+	// 2. pretend caching if authorization code fails
 	authMgr.authtokenErr = errors.New("auth code load failed")
 	mender.authToken = noAuthToken
 	err = mender.Authorize()
@@ -877,7 +877,7 @@ func TestMenderInstallUpdate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, upd)
 
-	// setup soem bogus device_type so that we don't match the update
+	// setup some bogus device_type so that we don't match the update
 	ioutil.WriteFile(deviceType, []byte("device_type=bogusdevicetype\n"), 0644)
 	err = mender.InstallUpdate(upd, 0)
 	assert.Error(t, err)
@@ -891,7 +891,7 @@ func TestMenderInstallUpdate(t *testing.T) {
 	err = mender.InstallUpdate(upd, 0)
 	assert.NoError(t, err)
 
-	// now try with device throwing errors durin ginstall
+	// now try with device throwing errors during install
 	upd, err = MakeRootfsImageArtifact(1, false)
 	assert.NoError(t, err)
 	assert.NotNil(t, upd)
