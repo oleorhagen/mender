@@ -356,22 +356,50 @@ func (i *InitState) Handle(ctx *StateContext, c Controller) (State, bool) {
 
 	log.Infof("handling loaded state: %s", sd.Name)
 
-	// chack last known state
-	switch sd.Name {
-	// update process was finished; check what is the status of update
-	case MenderStateReboot:
+	if !committedPartition(c) {
+		// only valid entrypoint into the uncommitted partition is reboot_leave
+		if sd.Name != MenderStateReboot {
+			// entered the uncommitted partition without finishing the whole update-path
+			// on the committed partition, therefore reboot back into the committed partition
+			// and error
+			if err := c.Reboot(); err != nil {
+				return NewUpdateErrorState(NewFatalError(errors.Errorf("failed to reboot device: %v", err)), sd.UpdateInfo), false
+			}
+			// should never happen
+			return doneState, false
+		}
 		return NewAfterRebootState(sd.UpdateInfo), false
+	}
+
+	// check last known state
+	switch sd.Name {
 
 	case MenderStateRollbackReboot:
 		return NewAfterRollbackRebootState(sd.UpdateInfo), false
 
-	// this should not happen
+	// Rerun commit-leave
+	case MenderStateUpdateCommit:
+		c.SetNextState(NewUpdateCommitState(sd.UpdateInfo))
+		return idleState, false
+
+	// invalid entrypoint into the state-machine. Error out.
 	default:
-		log.Errorf("got invalid state: %v", sd.Name)
+		log.Errorf("got invalid entrypoint into the state machine: state: %v", sd.Name)
 		me := NewFatalError(errors.Errorf("got invalid state stored: %v", sd.Name))
 
 		return NewUpdateErrorState(me, sd.UpdateInfo), false
 	}
+}
+
+func committedPartition(c Controller) bool {
+
+	ua, err := c.HasUpgrade()
+	log.Infof("in committedPartition: ua: %t, err: %v", ua, err)
+	if err != nil {
+		// failure to query u-boot
+		return false
+	}
+	return !ua
 }
 
 type AuthorizeWaitState struct {
@@ -509,6 +537,15 @@ func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, boo
 		// won't work after update; at this point without rolling-back it won't be
 		// possible to perform new update
 		return NewRollbackState(uc.Update(), false, true), false
+	}
+
+	log.Info("Storing commit state data")
+	if err := StoreStateData(ctx.store, StateData{
+		Name:       uc.Id(),
+		UpdateInfo: uc.Update(),
+	}); err != nil {
+		// The update is already committed, so not much we can do
+		log.Errorf("failed to write state-data to storage: %v", err)
 	}
 
 	// update is commited now; report status
@@ -922,16 +959,19 @@ func (usr *UpdateStatusReportState) Handle(ctx *StateContext, c Controller) (Sta
 
 	log.Debug("handle update status report state")
 
-	if err := StoreStateData(ctx.store, StateData{
-		Name:         usr.Id(),
-		UpdateInfo:   usr.Update(),
-		UpdateStatus: usr.status,
-	}); err != nil {
-		log.Errorf("failed to store state data in update status report state: %v",
-			err)
-		return NewReportErrorState(usr.Update(), usr.status), false
+	// Do not store this if artifact-commit scripts are run when leaving the state
+	// as then the scripts will not be rerun
+	if usr.Transition() != ToArtifactCommit {
+		if err := StoreStateData(ctx.store, StateData{
+			Name:         usr.Id(),
+			UpdateInfo:   usr.Update(),
+			UpdateStatus: usr.status,
+		}); err != nil {
+			log.Errorf("failed to store state data in update status report state: %v",
+				err)
+			return NewReportErrorState(usr.Update(), usr.status), false
+		}
 	}
-
 	if err := sendDeploymentStatus(usr.Update(), usr.status,
 		&usr.triesSendingReport, &usr.reportSent, c); err != nil {
 		log.Errorf("failed to send status to server: %v", err)
@@ -960,8 +1000,11 @@ func (usr *UpdateStatusReportState) Handle(ctx *StateContext, c Controller) (Sta
 	// stop deployment logging as the update is completed at this point
 	DeploymentLogger.Disable()
 	// status reported, logs uploaded if needed, remove state data
-	RemoveStateData(ctx.store)
-
+	// unless artifact-commit leave is run while leaving, then cleanup is
+	// done in the after the transition is finished
+	if usr.Transition() != ToArtifactCommit {
+		RemoveStateData(ctx.store)
+	}
 	return idleState, false
 }
 

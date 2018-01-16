@@ -672,6 +672,12 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 
 		m.SetNextState(to)
 
+		// Special case cleanup of stored state-data
+		if from.Transition() == ToArtifactFailure && to.Id() == MenderStateIdle ||
+			from.Transition() == ToArtifactCommit && to.Id() == MenderStateIdle {
+			RemoveStateData(ctx.store)
+		}
+
 		if err := to.Transition().Enter(m.stateScriptExecutor, report); err != nil {
 			log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
 			// we have not entered to state; so handle from state error
