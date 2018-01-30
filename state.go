@@ -21,6 +21,7 @@ import (
 
 	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/client"
+	"github.com/mendersoftware/mender/statescript"
 	"github.com/mendersoftware/mender/store"
 	"github.com/pkg/errors"
 )
@@ -226,6 +227,8 @@ type State interface {
 	// Return transition
 	Transition() Transition
 	SetTransition(t Transition)
+	Enter(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error
+	Leave(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error
 }
 
 type WaitState interface {
@@ -244,10 +247,16 @@ type UpdateState interface {
 	SetTransition(t Transition)
 }
 
+type enterfunction func(exec statescript.Executor, report *client.StatusReportWrapper) error
+type leavefunction func(exec statescript.Executor, report *client.StatusReportWrapper) error
+
 // baseState is a helper state with some convenience methods
 type baseState struct {
 	id MenderState
-	t  Transition
+	t  Transition // Transition marks the group of the current state,
+	// thus only run a transition if we are leaving a state-group
+	enterfun enterfunction
+	leavefun leavefunction
 }
 
 func (b *baseState) Id() MenderState {
@@ -264,6 +273,34 @@ func (b *baseState) Transition() Transition {
 
 func (b *baseState) SetTransition(tran Transition) {
 	b.t = tran
+}
+
+func (b *baseState) SetEnterFunction(ef enterfunction) {
+	b.enterfun = ef
+}
+
+func (b *baseState) SetLeaveFunction(lf leavefunction) {
+	b.leavefun = lf
+}
+
+func (b *baseState) Enter(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error {
+	if b.Transition() != totrans {
+		b.enterfun(exec, report)
+	}
+	return nil
+}
+
+func (b *baseState) Leave(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error {
+	if b.Transition() != totrans {
+		b.enterfun(exec, report)
+	}
+	return nil
+}
+
+func (b *baseState) Handle() {
+	// Enter
+	// HandleState
+	// Leave
 }
 
 type waitState struct {
