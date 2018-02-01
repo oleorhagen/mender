@@ -234,8 +234,9 @@ type baseState struct {
 	id MenderState
 	t  Transition // Transition marks the group of the current state,
 	// thus only run a transition if we are leaving a state-group
-	enterfun enterfunction
-	leavefun leavefunction
+	enterfun  enterfunction
+	leavefun  leavefunction
+	handlefun func(ctx *StateContext, c Controller) (State, bool)
 }
 
 func newBaseState(id MenderState, t Transition) baseState {
@@ -271,6 +272,10 @@ func (b *baseState) SetLeaveFunction(lf leavefunction) {
 	b.leavefun = lf
 }
 
+func (b *baseState) SetHandleFunction(hf func(ctx *StateContext, c Controller) (State, bool)) {
+	b.handlefun = hf
+}
+
 func (b *baseState) Enter(totrans Transition, exec Executor, report *client.StatusReportWrapper) error {
 	if b.Transition() != totrans {
 		b.enterfun(exec, report)
@@ -295,12 +300,8 @@ func (b *baseState) HandleFunc(exec Executor, handlefun func(ctx *StateContext, 
 	}
 }
 
-func (b *baseState) Handle() {
-	// Enter
-	// b.enterfun()
-	// HandleState
-	// b.leavefun()
-	// Leave
+func (b *baseState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	b.handlefun(ctx, c)
 }
 
 type waitState struct {
@@ -309,7 +310,7 @@ type waitState struct {
 }
 
 func NewWaitState(id MenderState, t Transition) WaitState {
-	return &waitState{
+	ws := &waitState{
 		baseState: newBaseState(id, t),
 		cancel:    make(chan bool),
 	}
