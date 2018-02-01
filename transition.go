@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/mendersoftware/mender/client"
-	"github.com/mendersoftware/mender/statescript"
 	"github.com/pkg/errors"
 )
 
@@ -88,7 +87,7 @@ func ignoreErrors(t Transition, action string) bool {
 }
 
 // Transition implements statescript.Launcher interface
-func (t Transition) Enter(exec statescript.Executor, report *client.StatusReportWrapper) error {
+func (t Transition) Enter(exec Executor, report *client.StatusReportWrapper) error {
 	if t == ToNone {
 		return nil
 	}
@@ -104,7 +103,7 @@ func (t Transition) Enter(exec statescript.Executor, report *client.StatusReport
 	return nil
 }
 
-func (t Transition) Leave(exec statescript.Executor, report *client.StatusReportWrapper) error {
+func (t Transition) Leave(exec Executor, report *client.StatusReportWrapper) error {
 	if t == ToNone {
 		return nil
 	}
@@ -120,7 +119,7 @@ func (t Transition) Leave(exec statescript.Executor, report *client.StatusReport
 	return nil
 }
 
-func (t Transition) Error(exec statescript.Executor, report *client.StatusReportWrapper) error {
+func (t Transition) Error(exec Executor, report *client.StatusReportWrapper) error {
 	if t == ToNone {
 		return nil
 	}

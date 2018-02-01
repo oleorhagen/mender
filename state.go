@@ -21,7 +21,6 @@ import (
 
 	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/client"
-	"github.com/mendersoftware/mender/statescript"
 	"github.com/mendersoftware/mender/store"
 	"github.com/pkg/errors"
 )
@@ -170,56 +169,35 @@ const (
 
 var (
 	initState = &InitState{
-		baseState{
-			id: MenderStateInit,
-			t:  ToNone,
-		},
+		newBaseState(MenderStateInit, ToNone),
 	}
 
 	idleState = &IdleState{
-		baseState{
-			id: MenderStateIdle,
-			t:  ToIdle,
-		},
+		newBaseState(MenderStateIdle, ToIdle),
 	}
 
 	authorizeWaitState = NewAuthorizeWaitState()
 
 	authorizeState = &AuthorizeState{
-		baseState{
-			id: MenderStateAuthorize,
-			t:  ToSync,
-		},
+		newBaseState(MenderStateAuthorize, ToSync),
 	}
 
 	inventoryUpdateState = &InventoryUpdateState{
-		baseState{
-			id: MenderStateInventoryUpdate,
-			t:  ToSync,
-		},
+		newBaseState(MenderStateInventoryUpdate, ToSync),
 	}
 
 	checkWaitState = NewCheckWaitState()
 
 	updateCheckState = &UpdateCheckState{
-		baseState{
-			id: MenderStateUpdateCheck,
-			t:  ToSync,
-		},
+		newBaseState(MenderStateUpdateCheck, ToSync),
 	}
 
 	doneState = &FinalState{
-		baseState{
-			id: MenderStateDone,
-			t:  ToNone,
-		},
+		newBaseState(MenderStateDone, ToNone),
 	}
 )
 
-type State interface {
-	// Perform state action, returns next state and boolean flag indicating if
-	// execution was cancelled or not
-	Handle(ctx *StateContext, c Controller) (State, bool)
+type BaseState interface {
 	// Cancel state action, returns true if action was cancelled
 	Cancel() bool
 	// Return numeric state ID
@@ -227,28 +205,29 @@ type State interface {
 	// Return transition
 	Transition() Transition
 	SetTransition(t Transition)
-	Enter(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error
-	Leave(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error
+	Enter(totrans Transition, exec Executor, report *client.StatusReportWrapper) error
+	Leave(totrans Transition, exec Executor, report *client.StatusReportWrapper) error
+}
+
+type State interface {
+	BaseState
+	// Perform state action, returns next state and boolean flag indicating if
+	// execution was cancelled or not
+	Handle(ctx *StateContext, c Controller) (State, bool)
 }
 
 type WaitState interface {
-	Id() MenderState
-	Cancel() bool
+	BaseState
 	Wait(next, same State, wait time.Duration) (State, bool)
-	Transition() Transition
-	SetTransition(t Transition)
 }
 
 type UpdateState interface {
-	Id() MenderState
-	Cancel() bool
+	BaseState
 	Update() client.UpdateResponse
-	Transition() Transition
-	SetTransition(t Transition)
 }
 
-type enterfunction func(exec statescript.Executor, report *client.StatusReportWrapper) error
-type leavefunction func(exec statescript.Executor, report *client.StatusReportWrapper) error
+type enterfunction func(exec Executor, report *client.StatusReportWrapper) error
+type leavefunction func(exec Executor, report *client.StatusReportWrapper) error
 
 // baseState is a helper state with some convenience methods
 type baseState struct {
@@ -257,6 +236,15 @@ type baseState struct {
 	// thus only run a transition if we are leaving a state-group
 	enterfun enterfunction
 	leavefun leavefunction
+}
+
+func newBaseState(id MenderState, t Transition) baseState {
+	return baseState{
+		id:       id,
+		t:        t,
+		enterfun: t.Enter,
+		leavefun: t.Leave,
+	}
 }
 
 func (b *baseState) Id() MenderState {
@@ -283,23 +271,35 @@ func (b *baseState) SetLeaveFunction(lf leavefunction) {
 	b.leavefun = lf
 }
 
-func (b *baseState) Enter(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error {
+func (b *baseState) Enter(totrans Transition, exec Executor, report *client.StatusReportWrapper) error {
 	if b.Transition() != totrans {
 		b.enterfun(exec, report)
 	}
 	return nil
 }
 
-func (b *baseState) Leave(totrans Transition, exec statescript.Executor, report *client.StatusReportWrapper) error {
+func (b *baseState) Leave(totrans Transition, exec Executor, report *client.StatusReportWrapper) error {
 	if b.Transition() != totrans {
 		b.enterfun(exec, report)
 	}
 	return nil
+}
+
+// HandleFunc is a closure that provides the standard way of handling a state-transisiton
+func (b *baseState) HandleFunc(exec Executor, handlefun func(ctx *StateContext, c Controller) (State, bool)) func(ctx *StateContext, c Controller) (State, bool) {
+	return func(ctx *StateContext, c Controller) (State, bool) {
+		b.enterfun(exec, nil)
+		rs, canc := handlefun(ctx, c)
+		b.leavefun(exec, nil)
+		return rs, canc
+	}
 }
 
 func (b *baseState) Handle() {
 	// Enter
+	// b.enterfun()
 	// HandleState
+	// b.leavefun()
 	// Leave
 }
 
@@ -310,7 +310,7 @@ type waitState struct {
 
 func NewWaitState(id MenderState, t Transition) WaitState {
 	return &waitState{
-		baseState: baseState{id: id, t: t},
+		baseState: newBaseState(id, t),
 		cancel:    make(chan bool),
 	}
 }
@@ -344,7 +344,7 @@ type updateState struct {
 
 func NewUpdateState(id MenderState, t Transition, u client.UpdateResponse) UpdateState {
 	return &updateState{
-		baseState: baseState{id: id, t: t},
+		baseState: newBaseState(id, t),
 		update:    u,
 	}
 }
@@ -626,11 +626,8 @@ type UpdateFetchState struct {
 
 func NewUpdateFetchState(update client.UpdateResponse) State {
 	return &UpdateFetchState{
-		baseState: baseState{
-			id: MenderStateUpdateFetch,
-			t:  ToDownload,
-		},
-		update: update,
+		baseState: newBaseState(MenderStateUpdateFetch, ToDownload),
+		update:    update,
 	}
 }
 
@@ -679,10 +676,7 @@ type UpdateStoreState struct {
 
 func NewUpdateStoreState(in io.ReadCloser, size int64, update client.UpdateResponse) State {
 	return &UpdateStoreState{
-		baseState{
-			id: MenderStateUpdateStore,
-			t:  ToDownload,
-		},
+		newBaseState(MenderStateUpdateStore, ToDownload),
 		update,
 		in,
 		size,
@@ -885,10 +879,7 @@ func NewErrorState(err menderError) State {
 	}
 
 	return &ErrorState{
-		baseState{
-			id: MenderStateError,
-			t:  ToError,
-		},
+		newBaseState(MenderStateError, ToError),
 		err,
 	}
 }
@@ -917,7 +908,7 @@ type UpdateErrorState struct {
 func NewUpdateErrorState(err menderError, update client.UpdateResponse) State {
 	return &UpdateErrorState{
 		ErrorState{
-			baseState{id: MenderStateUpdateError, t: ToArtifactFailure},
+			newBaseState(MenderStateUpdateError, ToError),
 			err,
 		},
 		update,
