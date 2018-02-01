@@ -239,12 +239,13 @@ type baseState struct {
 	handlefun func(ctx *StateContext, c Controller) (State, bool)
 }
 
-func newBaseState(id MenderState, t Transition) baseState {
+func newBaseState(id MenderState, t Transition, handlefun func(ctx *StateContext, c Controller) (State, bool)) baseState {
 	return baseState{
-		id:       id,
-		t:        t,
-		enterfun: t.Enter,
-		leavefun: t.Leave,
+		id:        id,
+		t:         t,
+		enterfun:  t.Enter,
+		leavefun:  t.Leave,
+		handlefun: handlefun,
 	}
 }
 
@@ -301,7 +302,10 @@ func (b *baseState) HandleFunc(exec Executor, handlefun func(ctx *StateContext, 
 }
 
 func (b *baseState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	b.handlefun(ctx, c)
+	// b.Enter()
+	// b.HandleCore()
+	// b.Leave()
+	return nil, false
 }
 
 type waitState struct {
