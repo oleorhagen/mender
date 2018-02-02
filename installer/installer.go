@@ -23,7 +23,7 @@ import (
 	"github.com/mendersoftware/mender-artifact/areader"
 	"github.com/mendersoftware/mender-artifact/artifact"
 	"github.com/mendersoftware/mender-artifact/handlers"
-	"github.com/mendersoftware/mender/statescript"
+	"github.com/mendersoftware/mender/store"
 	"github.com/pkg/errors"
 )
 
@@ -93,7 +93,7 @@ func Install(art io.ReadCloser, dt string, key []byte, scrDir string,
 		return s.Verify(message, sig)
 	}
 
-	scr := statescript.NewStore(scrDir)
+	scr := store.NewStateScriptStore(scrDir)
 	// we need to wipe out the scripts directory first
 	if err := scr.Clear(); err != nil {
 		log.Errorf("installer: error initializing directory for scripts [%s]: %v",

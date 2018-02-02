@@ -215,10 +215,7 @@ var (
 	}
 )
 
-type State interface {
-	// Perform state action, returns next state and boolean flag indicating if
-	// execution was cancelled or not
-	Handle(ctx *StateContext, c Controller) (State, bool)
+type StateBase interface {
 	// Cancel state action, returns true if action was cancelled
 	Cancel() bool
 	// Return numeric state ID
@@ -228,20 +225,21 @@ type State interface {
 	SetTransition(t Transition)
 }
 
+type State interface {
+	StateBase
+	// Perform state action, returns next state and boolean flag indicating if
+	// execution was cancelled or not
+	Handle(ctx *StateContext, c Controller) (State, bool)
+}
+
 type WaitState interface {
-	Id() MenderState
-	Cancel() bool
+	StateBase
 	Wait(next, same State, wait time.Duration) (State, bool)
-	Transition() Transition
-	SetTransition(t Transition)
 }
 
 type UpdateState interface {
-	Id() MenderState
-	Cancel() bool
+	StateBase
 	Update() client.UpdateResponse
-	Transition() Transition
-	SetTransition(t Transition)
 }
 
 // baseState is a helper state with some convenience methods
@@ -264,6 +262,19 @@ func (b *baseState) Transition() Transition {
 
 func (b *baseState) SetTransition(tran Transition) {
 	b.t = tran
+}
+
+type handlefunc func(ctx *StateContext, c Controller) (State, bool)
+
+func (b *baseState) HandleStateBase(ctx *StateContext, c Controller, hf handlefunc) (State, bool) {
+	if err := b.t.Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewErrorState(NewTransientError(err)), false
+	}
+	st, canc := hf(ctx, c)
+	if err := b.t.Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewErrorState(NewTransientError(err)), false
+	}
+	return st, canc
 }
 
 type waitState struct {
@@ -397,6 +408,17 @@ type AuthorizeState struct {
 }
 
 func (a *AuthorizeState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := a.t.Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewErrorState(NewTransientError(err)), false
+	}
+	rs, canc := a.HandleCore(ctx, c)
+	if err := a.t.Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewErrorState(NewTransientError(err)), false
+	}
+	return rs, canc
+}
+
+func (a *AuthorizeState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
@@ -425,6 +447,16 @@ func NewUpdateVerifyState(update client.UpdateResponse) State {
 }
 
 func (uv *UpdateVerifyState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := uv.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), uv.Update()), false
+	}
+	rs, canc := uv.HandleCore(ctx, c)
+	if err := uv.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), uv.Update()), false
+	}
+	return rs, canc
+}
+func (uv *UpdateVerifyState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
 	if err := DeploymentLogger.Enable(uv.Update().ID); err != nil {
@@ -468,6 +500,17 @@ func NewUpdateCommitState(update client.UpdateResponse) State {
 }
 
 func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := uc.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), uc.Update()), false
+	}
+	rs, canc := uc.HandleCore(ctx, c)
+	if err := uc.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), uc.Update()), false
+	}
+	return rs, canc
+}
+
+func (uc *UpdateCommitState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
 	if err := DeploymentLogger.Enable(uc.Update().ID); err != nil {
@@ -520,6 +563,17 @@ type UpdateCheckState struct {
 }
 
 func (u *UpdateCheckState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := u.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewErrorState(NewTransientError(err)), false
+	}
+	rs, canc := u.HandleCore(ctx, c)
+	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewErrorState(NewTransientError(err)), false
+	}
+	return rs, canc
+}
+
+func (u *UpdateCheckState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	log.Debugf("handle update check state")
 	ctx.lastUpdateCheck = time.Now()
 
@@ -558,6 +612,17 @@ func NewUpdateFetchState(update client.UpdateResponse) State {
 }
 
 func (u *UpdateFetchState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), u.Update()), false
+	}
+	rs, canc := u.HandleCore(ctx, c)
+	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), u.Update()), false
+	}
+	return rs, canc
+}
+
+func (u *UpdateFetchState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(u.update.ID); err != nil {
 		return NewUpdateStatusReportState(u.update, client.StatusFailure), false
@@ -613,6 +678,17 @@ func NewUpdateStoreState(in io.ReadCloser, size int64, update client.UpdateRespo
 }
 
 func (u *UpdateStoreState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), u.Update()), false
+	}
+	rs, canc := u.HandleCore(ctx, c)
+	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), u.Update()), false
+	}
+	return rs, canc
+}
+
+func (u *UpdateStoreState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// make sure to close the stream with image data
 	defer u.imagein.Close()
@@ -672,6 +748,17 @@ func NewUpdateInstallState(update client.UpdateResponse) State {
 }
 
 func (is *UpdateInstallState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := is.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), is.Update()), false
+	}
+	rs, canc := is.HandleCore(ctx, c)
+	if err := is.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), is.Update()), false
+	}
+	return rs, canc
+}
+
+func (is *UpdateInstallState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(is.Update().ID); err != nil {
 		return NewUpdateStatusReportState(is.Update(), client.StatusFailure), false
@@ -817,6 +904,17 @@ func NewErrorState(err menderError) State {
 }
 
 func (e *ErrorState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := e.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		log.Infof("error in error-script: %s", err)
+	}
+	rs, canc := e.HandleCore(ctx, c)
+	if err := e.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		log.Infof("error in error-script: %s", err)
+	}
+	return rs, canc
+}
+
+func (e *ErrorState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
@@ -1070,6 +1168,17 @@ func NewRebootState(update client.UpdateResponse) State {
 }
 
 func (e *RebootState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := e.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), e.Update()), false
+	}
+	rs, canc := e.HandleCore(ctx, c)
+	if err := e.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), e.Update()), false
+	}
+	return rs, canc
+}
+
+func (e *RebootState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
 	if err := DeploymentLogger.Enable(e.Update().ID); err != nil {
@@ -1118,6 +1227,15 @@ func NewAfterRebootState(update client.UpdateResponse) State {
 
 func (rs *AfterRebootState) Handle(ctx *StateContext,
 	c Controller) (State, bool) {
+	r, canc := rs.HandleCore(ctx, c)
+	if err := rs.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
+	}
+	return r, canc
+}
+
+func (rs *AfterRebootState) HandleCore(ctx *StateContext,
+	c Controller) (State, bool) {
 	// start deployment logging; no error checking
 	// we can do nothing here; either we will have the logs or not...
 	DeploymentLogger.Enable(rs.Update().ID)
@@ -1144,6 +1262,17 @@ func NewRollbackState(update client.UpdateResponse,
 }
 
 func (rs *RollbackState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := rs.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
+	}
+	r, canc := rs.HandleCore(ctx, c)
+	if err := rs.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
+	}
+	return r, canc
+}
+
+func (rs *RollbackState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(rs.Update().ID); err != nil {
 		// just log error; we need to reboot anyway
@@ -1181,6 +1310,14 @@ func NewRollbackRebootState(update client.UpdateResponse) State {
 }
 
 func (rs *RollbackRebootState) Handle(ctx *StateContext, c Controller) (State, bool) {
+	if err := rs.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
+	}
+
+	return rs.HandleCore(ctx, c)
+}
+
+func (rs *RollbackRebootState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(rs.Update().ID); err != nil {
 		// just log error; we need to reboot anyway
@@ -1219,6 +1356,15 @@ func NewAfterRollbackRebootState(update client.UpdateResponse) State {
 }
 
 func (rs *AfterRollbackRebootState) Handle(ctx *StateContext,
+	c Controller) (State, bool) {
+	r, canc := rs.HandleCore(ctx, c)
+	if err := rs.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
+		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
+	}
+	return r, canc
+}
+
+func (rs *AfterRollbackRebootState) HandleCore(ctx *StateContext,
 	c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(rs.Update().ID); err != nil {

@@ -12,7 +12,7 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package statescript
+package main
 
 import (
 	"fmt"
@@ -28,6 +28,7 @@ import (
 
 	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/client"
+	"github.com/mendersoftware/mender/store"
 	"github.com/pkg/errors"
 )
 
@@ -88,7 +89,7 @@ func (l Launcher) CheckRootfsScriptsVersion() error {
 		return nil
 	}
 
-	ver, err := readVersion(filepath.Join(l.RootfsScriptsPath, "version"))
+	ver, err := store.ReadVersion(filepath.Join(l.RootfsScriptsPath, "version"))
 	if err != nil && os.IsNotExist(err) {
 		// no version
 		return errors.New("statescript: missing rootfs scripts version file")
@@ -144,7 +145,7 @@ func (l Launcher) get(state, action string) ([]os.FileInfo, string, error) {
 
 	for _, file := range files {
 		if file.Name() == "version" {
-			version, err = readVersion(filepath.Join(sDir, file.Name()))
+			version, err = store.ReadVersion(filepath.Join(sDir, file.Name()))
 			if err != nil {
 				return nil, "", errors.Wrapf(err, "statescript: can not read version file")
 			}

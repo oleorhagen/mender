@@ -27,7 +27,6 @@ import (
 
 	"github.com/mendersoftware/mender/client"
 	"github.com/mendersoftware/mender/installer"
-	"github.com/mendersoftware/mender/statescript"
 	"github.com/mendersoftware/mender/store"
 	"github.com/pkg/errors"
 )
@@ -61,6 +60,7 @@ type Controller interface {
 	UploadLog(update client.UpdateResponse, logs []byte) menderError
 	InventoryRefresh() error
 	CheckScriptsCompatibility() error
+	StateScriptExecutor() Executor
 
 	UInstallCommitRebooter
 	StateRunner
@@ -227,7 +227,7 @@ type mender struct {
 	UInstallCommitRebooter
 	updater             client.Updater
 	state               State
-	stateScriptExecutor statescript.Executor
+	stateScriptExecutor Executor
 	stateScriptPath     string
 	config              menderConfig
 	artifactInfoFile    string
@@ -251,7 +251,7 @@ func NewMender(config menderConfig, pieces MenderPieces) (*mender, error) {
 		return nil, errors.Wrap(err, "error creating HTTP client")
 	}
 
-	stateScrExec := statescript.Launcher{
+	stateScrExec := Launcher{
 		ArtScriptsPath:          defaultArtScriptsPath,
 		RootfsScriptsPath:       defaultRootfsScriptsPath,
 		SupportedScriptVersions: []int{2},
@@ -629,58 +629,6 @@ func (m *mender) TransitionState(to State, ctx *StateContext) (State, bool) {
 		from.Id(), from.Transition().String(),
 		to.Id(), to.Transition().String())
 
-	if to.Transition() == ToNone {
-		to.SetTransition(from.Transition())
-	}
-
-	var report *client.StatusReportWrapper
-	if shouldReportUpdateStatus(to.Id()) {
-		upd, err := getUpdateFromState(to)
-		if err != nil {
-			log.Error(err)
-		} else {
-			report = &client.StatusReportWrapper{
-				API: m.api.Request(m.authToken),
-				URL: m.config.ServerURL,
-				Report: client.StatusReport{
-					DeploymentID: upd.ID,
-					Status:       to.Id().Status(),
-				},
-			}
-		}
-	}
-
-	if shouldTransit(from, to) {
-		if to.Transition().IsToError() && !from.Transition().IsToError() {
-			log.Debug("transitioning to error state")
-
-			// Set the reported status to be the same as the state where the
-			// error happened. THIS IS IMPORTANT AS WE CAN SEND THE client.StatusFailure
-			// ONLY ONCE.
-			if report != nil {
-				report.Report.Status = from.Id().Status()
-			}
-			// call error scripts
-			from.Transition().Error(m.stateScriptExecutor, report)
-		} else {
-			// do transition to ordinary state
-			if err := from.Transition().Leave(m.stateScriptExecutor, report); err != nil {
-				log.Errorf("error executing leave script for %s state: %v", from.Id(), err)
-				return TransitionError(from, "Leave"), false
-			}
-		}
-
-		m.SetNextState(to)
-
-		if err := to.Transition().Enter(m.stateScriptExecutor, report); err != nil {
-			log.Errorf("error calling enter script for (error) %s state: %v", to.Id(), err)
-			// we have not entered to state; so handle from state error
-			return TransitionError(from, "Enter"), false
-		}
-	}
-
-	m.SetNextState(to)
-
 	// execute current state action
 	return to.Handle(ctx, m)
 }
@@ -738,4 +686,8 @@ func (m *mender) InstallUpdate(from io.ReadCloser, size int64) error {
 	}
 	return installer.Install(from, deviceType,
 		m.GetArtifactVerifyKey(), m.stateScriptPath, m.UInstallCommitRebooter, true)
+}
+
+func (m *mender) StateScriptExecutor() Executor {
+	return m.stateScriptExecutor
 }

@@ -12,7 +12,7 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package statescript
+package store
 
 import (
 	"bytes"
@@ -25,17 +25,17 @@ import (
 	"github.com/pkg/errors"
 )
 
-type Store struct {
+type StateScriptStore struct {
 	location string
 }
 
-func NewStore(destination string) *Store {
-	return &Store{
+func NewStateScriptStore(destination string) *StateScriptStore {
+	return &StateScriptStore{
 		location: destination,
 	}
 }
 
-func (s *Store) Clear() error {
+func (s *StateScriptStore) Clear() error {
 	if s.location == "" {
 		return nil
 	}
@@ -52,7 +52,7 @@ func (s *Store) Clear() error {
 	return err
 }
 
-func (s *Store) StoreScript(r io.Reader, name string) error {
+func (s *StateScriptStore) StoreScript(r io.Reader, name string) error {
 	sLocation := filepath.Join(s.location, name)
 	f, err := os.OpenFile(sLocation, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
 	if err != nil {
@@ -70,11 +70,11 @@ func (s *Store) StoreScript(r io.Reader, name string) error {
 	return nil
 }
 
-func (s Store) storeVersion(ver int) error {
+func (s StateScriptStore) StoreVersion(ver int) error {
 	return s.StoreScript(bytes.NewBufferString(strconv.Itoa(ver)), "version")
 }
 
-func readVersion(name string) (int, error) {
+func ReadVersion(name string) (int, error) {
 	data, err := ioutil.ReadFile(name)
 	if err != nil {
 		return 0, err
@@ -83,13 +83,13 @@ func readVersion(name string) (int, error) {
 	return strconv.Atoi(string(data))
 }
 
-func (s Store) Finalize(ver int) error {
+func (s StateScriptStore) Finalize(ver int) error {
 	if s.location == "" {
 		return nil
 	}
 
 	// make sure we are storing the version of the scripts
-	if err := s.storeVersion(ver); err != nil {
+	if err := s.StoreVersion(ver); err != nil {
 		return err
 	}
 
