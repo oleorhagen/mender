@@ -596,6 +596,7 @@ func TransitionError(s State, action string) State {
 		return NewRollbackState(t.Update(), true, true)
 	case *UpdateCommitState:
 		return NewRollbackState(t.Update(), true, true)
+	// TODO this functionality needs to be replicated
 	case *RollbackState:
 		if t.reboot {
 			return NewRollbackRebootState(t.Update())
