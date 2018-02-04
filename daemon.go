@@ -62,7 +62,8 @@ func (d *menderDaemon) Run() error {
 	var toState State = d.mender.GetCurrentState()
 	cancelled := false
 	for {
-		toState, cancelled = d.mender.TransitionState(toState, &d.sctx)
+		toState, cancelled = ExternalStateMachine(toState, &d.sctx, d.mender)
+		log.Infof("State: %s", toState.Id())
 
 		if toState.Id() == MenderStateError {
 			es, ok := toState.(*ErrorState)
@@ -82,4 +83,20 @@ func (d *menderDaemon) Run() error {
 		}
 	}
 	return nil
+}
+
+func ExternalStateMachine(s State, ctx *StateContext, c Controller) (State, bool) {
+	var externalState = s.Transition()
+	var internalState = NewInternalMenderState(externalState, s)
+	for {
+		if err := externalState.Enter(c.StateScriptExecutor(), nil); err != nil {
+			return NewErrorState(NewTransientError(err)), false
+		}
+		rs, canc := internalState.Handle(ctx, c)
+		if err := externalState.Leave(c.StateScriptExecutor(), nil); err != nil {
+			return NewErrorState(NewTransientError(err)), false
+		}
+		externalState = rs.Transition()
+		return rs, canc
+	}
 }

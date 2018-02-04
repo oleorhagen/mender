@@ -277,6 +277,37 @@ func (b *baseState) HandleStateBase(ctx *StateContext, c Controller, hf handlefu
 	return st, canc
 }
 
+type InternalMenderState struct {
+	baseState
+	externalState Transition
+	internalState State
+}
+
+func NewInternalMenderState(ext Transition, internal State) *InternalMenderState {
+	return &InternalMenderState{
+		baseState:     baseState{id: MenderStateIdle, t: ext},
+		externalState: ext,
+		internalState: internal,
+	}
+}
+
+func (i *InternalMenderState) Handle(ctx *StateContext, c Controller) (rs State, canc bool) {
+	log.Infof("ExternalState: %s", i.externalState)
+	for {
+		rs, canc := i.internalState.Handle(ctx, c)
+		log.Infof("InternalState: %s", rs.Id())
+		c.SetNextState(rs)
+		if canc {
+			return rs, canc
+		}
+		// leaving external state
+		if rs.Transition() != i.externalState && rs.Transition() != ToNone {
+			return rs, canc
+		}
+		i.internalState = rs
+	}
+}
+
 type waitState struct {
 	baseState
 	cancel chan bool
@@ -339,19 +370,6 @@ func leavingExternalState(from, to State) bool {
 }
 
 func (i *IdleState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := i.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	rs, canc := i.HandleCore(ctx, c)
-	if leavingExternalState(i, rs) {
-		if err := i.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-			return NewErrorState(NewTransientError(err)), false
-		}
-	}
-	return rs, canc
-}
-
-func (i *IdleState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
@@ -416,17 +434,6 @@ func NewAuthorizeWaitState() State {
 }
 
 func (a *AuthorizeWaitState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := a.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	rs, canc := a.HandleCore(ctx, c)
-	if err := a.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	return rs, canc
-}
-
-func (a *AuthorizeWaitState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	log.Debugf("handle authorize wait state")
 	intvl := c.GetRetryPollInterval()
 
@@ -439,17 +446,6 @@ type AuthorizeState struct {
 }
 
 func (a *AuthorizeState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := a.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	rs, canc := a.HandleCore(ctx, c)
-	if err := a.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	return rs, canc
-}
-
-func (a *AuthorizeState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
@@ -478,13 +474,6 @@ func NewUpdateVerifyState(update client.UpdateResponse) State {
 }
 
 func (uv *UpdateVerifyState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	rs, canc := uv.HandleCore(ctx, c)
-	if err := uv.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewRollbackState(uv.Update(), true, true), false
-	}
-	return rs, canc
-}
-func (uv *UpdateVerifyState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
 	if err := DeploymentLogger.Enable(uv.Update().ID); err != nil {
@@ -528,17 +517,6 @@ func NewUpdateCommitState(update client.UpdateResponse) State {
 }
 
 func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := uc.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewRollbackState(uc.Update(), true, true), false
-	}
-	rs, canc := uc.HandleCore(ctx, c)
-	if err := uc.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewRollbackState(uc.Update(), true, true), false
-	}
-	return rs, canc
-}
-
-func (uc *UpdateCommitState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
 	if err := DeploymentLogger.Enable(uc.Update().ID); err != nil {
@@ -591,17 +569,6 @@ type UpdateCheckState struct {
 }
 
 func (u *UpdateCheckState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := u.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	rs, canc := u.HandleCore(ctx, c)
-	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	return rs, canc
-}
-
-func (u *UpdateCheckState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	log.Debugf("handle update check state")
 	ctx.lastUpdateCheck = time.Now()
 
@@ -646,21 +613,6 @@ func AddStateToExternalState(s State, t Transition) {
 }
 
 func (u *UpdateFetchState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := u.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		rs := NewUpdateStatusReportState(u.Update(), client.StatusFailure)
-		AddStateToExternalState(rs, ToError)
-		return rs, false
-	}
-	rs, canc := u.HandleCore(ctx, c)
-	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		rs := NewUpdateStatusReportState(u.Update(), client.StatusFailure)
-		AddStateToExternalState(rs, ToError)
-		return rs, false
-	}
-	return rs, canc
-}
-
-func (u *UpdateFetchState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(u.update.ID); err != nil {
 		return NewUpdateStatusReportState(u.update, client.StatusFailure), false
@@ -716,22 +668,6 @@ func NewUpdateStoreState(in io.ReadCloser, size int64, update client.UpdateRespo
 }
 
 func (u *UpdateStoreState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		rs := NewUpdateStatusReportState(u.Update(), client.StatusFailure)
-		AddStateToExternalState(rs, ToError)
-		return rs, false
-	}
-	rs, canc := u.HandleCore(ctx, c)
-	if err := u.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		rs = NewUpdateStatusReportState(u.Update(), client.StatusFailure)
-		AddStateToExternalState(rs, ToError)
-		return rs, false
-
-	}
-	return rs, canc
-}
-
-func (u *UpdateStoreState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// make sure to close the stream with image data
 	defer u.imagein.Close()
@@ -791,17 +727,6 @@ func NewUpdateInstallState(update client.UpdateResponse) State {
 }
 
 func (is *UpdateInstallState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := is.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewRollbackState(is.Update(), false, false), false
-	}
-	rs, canc := is.HandleCore(ctx, c)
-	if err := is.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewRollbackState(is.Update(), false, false), false
-	}
-	return rs, canc
-}
-
-func (is *UpdateInstallState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(is.Update().ID); err != nil {
 		return NewUpdateStatusReportState(is.Update(), client.StatusFailure), false
@@ -866,17 +791,6 @@ func NewCheckWaitState() State {
 }
 
 func (cw *CheckWaitState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := cw.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	rs, canc := cw.HandleCore(ctx, c)
-	if err := cw.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	return rs, canc
-}
-
-func (cw *CheckWaitState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	log.Debugf("handle check wait state")
 
@@ -926,17 +840,6 @@ type InventoryUpdateState struct {
 }
 
 func (iu *InventoryUpdateState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := iu.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	rs, canc := iu.HandleCore(ctx, c)
-	if err := iu.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewErrorState(NewTransientError(err)), false
-	}
-	return rs, canc
-}
-
-func (iu *InventoryUpdateState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	ctx.lastInventoryUpdate = time.Now()
 
@@ -969,17 +872,6 @@ func NewErrorState(err menderError) State {
 }
 
 func (e *ErrorState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := e.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		log.Infof("error in error-script: %s", err)
-	}
-	rs, canc := e.HandleCore(ctx, c)
-	if err := e.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		log.Infof("error in error-script: %s", err)
-	}
-	return rs, canc
-}
-
-func (e *ErrorState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// stop deployment logging
 	DeploymentLogger.Disable()
 
@@ -1078,18 +970,6 @@ func sendDeploymentStatus(update client.UpdateResponse, status string,
 }
 
 func (usr *UpdateStatusReportState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := usr.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		log.Infof("error in error script: %v", err)
-	}
-	rs, canc := usr.HandleCore(ctx, c)
-	if err := usr.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		log.Infof("error in error script: %v", err)
-	}
-	return rs, canc
-
-}
-
-func (usr *UpdateStatusReportState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging; no error checking
 	// we can do nothing here; either we will have the logs or not...
@@ -1245,13 +1125,6 @@ func NewRebootState(update client.UpdateResponse) State {
 }
 
 func (e *RebootState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := e.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewRollbackState(e.Update(), false, false), false
-	}
-	return e.HandleCore(ctx, c)
-}
-
-func (e *RebootState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
 	if err := DeploymentLogger.Enable(e.Update().ID); err != nil {
@@ -1326,17 +1199,6 @@ func NewRollbackState(update client.UpdateResponse,
 }
 
 func (rs *RollbackState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := rs.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
-	}
-	r, canc := rs.HandleCore(ctx, c)
-	if err := rs.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
-	}
-	return r, canc
-}
-
-func (rs *RollbackState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(rs.Update().ID); err != nil {
 		// just log error; we need to reboot anyway
@@ -1374,13 +1236,6 @@ func NewRollbackRebootState(update client.UpdateResponse) State {
 }
 
 func (rs *RollbackRebootState) Handle(ctx *StateContext, c Controller) (State, bool) {
-	if err := rs.Transition().Enter(c.StateScriptExecutor(), nil); err != nil {
-		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
-	}
-	return rs.HandleCore(ctx, c)
-}
-
-func (rs *RollbackRebootState) HandleCore(ctx *StateContext, c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(rs.Update().ID); err != nil {
 		// just log error; we need to reboot anyway
@@ -1419,15 +1274,6 @@ func NewAfterRollbackRebootState(update client.UpdateResponse) State {
 }
 
 func (rs *AfterRollbackRebootState) Handle(ctx *StateContext,
-	c Controller) (State, bool) {
-	r, canc := rs.HandleCore(ctx, c)
-	if err := rs.Transition().Leave(c.StateScriptExecutor(), nil); err != nil {
-		return NewUpdateErrorState(NewTransientError(err), rs.Update()), false
-	}
-	return r, canc
-}
-
-func (rs *AfterRollbackRebootState) HandleCore(ctx *StateContext,
 	c Controller) (State, bool) {
 	// start deployment logging
 	if err := DeploymentLogger.Enable(rs.Update().ID); err != nil {
