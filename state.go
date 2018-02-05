@@ -223,6 +223,8 @@ type StateBase interface {
 	// Return transition
 	Transition() Transition
 	SetTransition(t Transition)
+	EnterError(err error) State
+	LeaveError(err error) State
 }
 
 type State interface {
@@ -264,6 +266,14 @@ func (b *baseState) SetTransition(tran Transition) {
 	b.t = tran
 }
 
+func (i *baseState) EnterError(err error) State {
+	return NewErrorState(NewTransientError(err))
+}
+
+func (i *baseState) LeaveError(err error) State {
+	return i.EnterError(err)
+}
+
 type handlefunc func(ctx *StateContext, c Controller) (State, bool)
 
 func (b *baseState) HandleStateBase(ctx *StateContext, c Controller, hf handlefunc) (State, bool) {
@@ -294,14 +304,16 @@ func NewInternalMenderState(ext Transition, internal State) *InternalMenderState
 func (i *InternalMenderState) Handle(ctx *StateContext, c Controller) (rs State, canc bool) {
 	log.Infof("ExternalState: %s", i.externalState)
 	for {
+		log.Infof("InternalState prior handle: %s", i.internalState.Id())
 		rs, canc := i.internalState.Handle(ctx, c)
-		log.Infof("InternalState: %s", rs.Id())
+		log.Infof("InternalState post handle: %s", rs.Id())
 		c.SetNextState(rs)
 		if canc {
 			return rs, canc
 		}
 		// leaving external state
 		if rs.Transition() != i.externalState && rs.Transition() != ToNone {
+			log.Infof("Leaving internal state: %s", i.internalState.Id())
 			return rs, canc
 		}
 		i.internalState = rs
@@ -347,6 +359,14 @@ type updateState struct {
 	update client.UpdateResponse
 }
 
+func (u *updateState) EnterError(err error) State {
+	return NewRollbackState(u.Update(), rprm{swap: false, reboot: false})
+}
+
+func (u *updateState) LeaveError(err error) State {
+	return u.EnterError(err)
+}
+
 func NewUpdateState(id MenderState, t Transition, u client.UpdateResponse) UpdateState {
 	return &updateState{
 		baseState: baseState{id: id, t: t},
@@ -360,13 +380,6 @@ func (us *updateState) Update() client.UpdateResponse {
 
 type IdleState struct {
 	baseState
-}
-
-func leavingExternalState(from, to State) bool {
-	if from.Transition() != to.Transition() {
-		return true
-	}
-	return false
 }
 
 func (i *IdleState) Handle(ctx *StateContext, c Controller) (State, bool) {
@@ -473,6 +486,14 @@ func NewUpdateVerifyState(update client.UpdateResponse) State {
 	}
 }
 
+func (u *UpdateVerifyState) EnterError(err error) State {
+	return NewRollbackState(u.Update(), rprm{swap: true, reboot: true})
+}
+
+func (u *UpdateVerifyState) LeaveError(err error) State {
+	return u.EnterError(err)
+}
+
 func (uv *UpdateVerifyState) Handle(ctx *StateContext, c Controller) (State, bool) {
 
 	// start deployment logging
@@ -502,11 +523,19 @@ func (uv *UpdateVerifyState) Handle(ctx *StateContext, c Controller) (State, boo
 		" running rollback image (previous active partition)",
 		uv.Update().ID)
 
-	return NewRollbackState(uv.Update(), false, false), false
+	return NewRollbackState(uv.Update(), rprm{swap: false, reboot: false}), false
 }
 
 type UpdateCommitState struct {
 	UpdateState
+}
+
+func (u *UpdateCommitState) EnterError(err error) State {
+	return NewRollbackState(u.Update(), rprm{swap: true, reboot: true})
+}
+
+func (u *UpdateCommitState) LeaveError(err error) State {
+	return u.EnterError(err)
 }
 
 func NewUpdateCommitState(update client.UpdateResponse) State {
@@ -529,7 +558,7 @@ func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, boo
 
 	if err != nil {
 		log.Errorf("Cannot determine name of new artifact. Update will not continue: %v : %v", defaultDeviceTypeFile, err)
-		return NewRollbackState(uc.Update(), false, true), false
+		return NewRollbackState(uc.Update(), rprm{swap: false, reboot: true}), false
 	} else if uc.Update().ArtifactName() != artifactName {
 		// seems like we're running in a different image than expected from update
 		// information, best report an error
@@ -538,7 +567,7 @@ func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, boo
 		log.Errorf("running with image %v, expected updated image %v",
 			artifactName, uc.Update().ArtifactName())
 
-		return NewRollbackState(uc.Update(), false, true), false
+		return NewRollbackState(uc.Update(), rprm{swap: false, reboot: true}), false
 	}
 
 	// update info and has upgrade flag are there, we're running the new
@@ -548,7 +577,7 @@ func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, boo
 	// check if state scripts version is supported
 	if err = c.CheckScriptsCompatibility(); err != nil {
 		log.Errorf("update commit failed: %s", err)
-		return NewRollbackState(uc.Update(), false, true), false
+		return NewRollbackState(uc.Update(), rprm{swap: false, reboot: true}), false
 	}
 
 	err = c.CommitUpdate()
@@ -557,7 +586,7 @@ func (uc *UpdateCommitState) Handle(ctx *StateContext, c Controller) (State, boo
 		// we need to perform roll-back here; one scenario is when u-boot fw utils
 		// won't work after update; at this point without rolling-back it won't be
 		// possible to perform new update
-		return NewRollbackState(uc.Update(), false, true), false
+		return NewRollbackState(uc.Update(), rprm{swap: false, reboot: true}), false
 	}
 
 	// update is commited now; report status
@@ -594,6 +623,14 @@ func (u *UpdateCheckState) Handle(ctx *StateContext, c Controller) (State, bool)
 type UpdateFetchState struct {
 	baseState
 	update client.UpdateResponse
+}
+
+func (u *UpdateFetchState) EnterError(err error) State {
+	return NewUpdateStatusReportState(u.Update(), client.StatusFailure)
+}
+
+func (u *UpdateFetchState) LeaveError(err error) State {
+	return u.EnterError(err)
 }
 
 func NewUpdateFetchState(update client.UpdateResponse) State {
@@ -653,6 +690,15 @@ type UpdateStoreState struct {
 	imagein io.ReadCloser
 	// expected image size
 	size int64
+}
+
+// TODO - is this correct?
+func (u *UpdateStoreState) EnterError(err error) State {
+	return NewUpdateErrorState(NewTransientError(err), u.Update())
+}
+
+func (u *UpdateStoreState) LeaveError(err error) State {
+	return NewUpdateStatusReportState(u.Update(), client.StatusFailure)
 }
 
 func NewUpdateStoreState(in io.ReadCloser, size int64, update client.UpdateResponse) State {
@@ -1095,7 +1141,7 @@ func (res *ReportErrorState) Handle(ctx *StateContext, c Controller) (State, boo
 	switch res.updateStatus {
 	case client.StatusSuccess:
 		// error while reporting success; rollback
-		return NewRollbackState(res.Update(), true, true), false
+		return NewRollbackState(res.Update(), rprm{swap: true, reboot: true}), false
 	case client.StatusFailure:
 		// error while reporting failure;
 		// start from scratch as previous update was broken
@@ -1146,14 +1192,14 @@ func (e *RebootState) Handle(ctx *StateContext, c Controller) (State, bool) {
 
 	merr := c.ReportUpdateStatus(e.Update(), client.StatusRebooting)
 	if merr != nil && merr.IsFatal() {
-		return NewRollbackState(e.Update(), true, false), false
+		return NewRollbackState(e.Update(), rprm{swap: true, reboot: false}), false
 	}
 
 	log.Info("rebooting device")
 
 	if err := c.Reboot(); err != nil {
 		log.Errorf("error rebooting device: %v", err)
-		return NewRollbackState(e.Update(), true, false), false
+		return NewRollbackState(e.Update(), rprm{swap: true, reboot: false}), false
 	}
 
 	// we can not reach this point
@@ -1162,6 +1208,14 @@ func (e *RebootState) Handle(ctx *StateContext, c Controller) (State, bool) {
 
 type AfterRebootState struct {
 	UpdateState
+}
+
+func (u *AfterRebootState) EnterError(err error) State {
+	return NewRollbackState(u.Update(), rprm{swap: true, reboot: true})
+}
+
+func (u *AfterRebootState) LeaveError(err error) State {
+	return u.EnterError(err)
 }
 
 func NewAfterRebootState(update client.UpdateResponse) State {
@@ -1189,13 +1243,28 @@ type RollbackState struct {
 	reboot bool
 }
 
-func NewRollbackState(update client.UpdateResponse,
-	swapPartitions, doReboot bool) State {
+type rprm struct {
+	swap   bool
+	reboot bool
+}
+
+func NewRollbackState(update client.UpdateResponse, r rprm) State {
 	return &RollbackState{
 		UpdateState: NewUpdateState(MenderStateRollback, ToArtifactRollback, update),
-		swap:        swapPartitions,
-		reboot:      doReboot,
+		swap:        r.swap,
+		reboot:      r.reboot,
 	}
+}
+
+func (u *RollbackState) EnterError(err error) State {
+	if u.reboot {
+		return NewRollbackRebootState(u.Update())
+	}
+	return NewUpdateErrorState(NewTransientError(err), u.Update())
+}
+
+func (u *RollbackState) LeaveError(err error) State {
+	return u.EnterError(err)
 }
 
 func (rs *RollbackState) Handle(ctx *StateContext, c Controller) (State, bool) {
@@ -1233,6 +1302,14 @@ func NewRollbackRebootState(update client.UpdateResponse) State {
 		UpdateState: NewUpdateState(MenderStateRollbackReboot,
 			ToArtifactRollbackReboot_Enter, update),
 	}
+}
+
+func (u *RollbackRebootState) EnterError(err error) State {
+	return NewUpdateErrorState(NewTransientError(err), u.Update())
+}
+
+func (u *RollbackRebootState) LeaveError(err error) State {
+	return u.EnterError(err)
 }
 
 func (rs *RollbackRebootState) Handle(ctx *StateContext, c Controller) (State, bool) {

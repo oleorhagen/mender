@@ -85,18 +85,45 @@ func (d *menderDaemon) Run() error {
 	return nil
 }
 
+// Two-layered state-machine should be factored out into a package of it's own
+
 func ExternalStateMachine(s State, ctx *StateContext, c Controller) (State, bool) {
 	var externalState = s.Transition()
 	var internalState = NewInternalMenderState(externalState, s)
 	for {
 		if err := externalState.Enter(c.StateScriptExecutor(), nil); err != nil {
-			return NewErrorState(NewTransientError(err)), false
+			return s.EnterError(err), false
 		}
 		rs, canc := internalState.Handle(ctx, c)
+		if canc {
+			return rs, canc
+		}
 		if err := externalState.Leave(c.StateScriptExecutor(), nil); err != nil {
-			return NewErrorState(NewTransientError(err)), false
+			return s.LeaveError(err), false
 		}
 		externalState = rs.Transition()
 		return rs, canc
+	}
+}
+
+// This way, or as a mender-state?
+func InternalStateMachine(s State, ctx *StateContext, c Controller) (State, bool) {
+	var internalState State = s
+	var externalState Transition = s.Transition()
+	log.Infof("ExternalState: %s", externalState)
+	for {
+		log.Infof("InternalState prior handle: %s", internalState.Id())
+		rs, canc := internalState.Handle(ctx, c)
+		log.Infof("InternalState post handle: %s", rs.Id())
+		c.SetNextState(rs)
+		if canc {
+			return rs, canc
+		}
+		// leaving external state
+		if rs.Transition() != i.externalState && rs.Transition() != ToNone {
+			log.Infof("Leaving internal state: %s", i.internalState.Id())
+			return rs, canc
+		}
+		internalState = rs
 	}
 }

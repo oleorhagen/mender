@@ -587,15 +587,15 @@ func TransitionError(s State, action string) State {
 		}
 		return NewUpdateErrorState(me, t.update)
 	case *UpdateInstallState:
-		return NewRollbackState(t.Update(), false, false)
+		return NewRollbackState(t.Update(), rprm{swap: false, reboot: false})
 	case *RebootState:
-		return NewRollbackState(t.Update(), false, false)
+		return NewRollbackState(t.Update(), rprm{swap: false, reboot: false})
 	case *AfterRebootState:
-		return NewRollbackState(t.Update(), true, true)
+		return NewRollbackState(t.Update(), rprm{swap: true, reboot: true})
 	case *UpdateVerifyState:
-		return NewRollbackState(t.Update(), true, true)
+		return NewRollbackState(t.Update(), rprm{swap: true, reboot: true})
 	case *UpdateCommitState:
-		return NewRollbackState(t.Update(), true, true)
+		return NewRollbackState(t.Update(), rprm{swap: true, reboot: true})
 	// TODO this functionality needs to be replicated
 	case *RollbackState:
 		if t.reboot {
