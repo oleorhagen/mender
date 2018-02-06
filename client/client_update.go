@@ -14,6 +14,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -189,6 +190,11 @@ func processUpdateResponse(response *http.Response) (interface{}, error) {
 
 	default:
 		log.Warn("Client recieved invalid response status code: ", response.StatusCode)
+
+		// log all server-api errors
+		if response.StatusCode >= 500 {
+			logRequestErrorInfo(ioutil.NopCloser(bytes.NewReader(respBody)))
+		}
 		return nil, errors.New("Invalid response received from server")
 	}
 }

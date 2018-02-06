@@ -14,6 +14,8 @@
 package client
 
 import (
+	"bytes"
+	"encoding/json"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -253,4 +255,32 @@ func TestExponentialBackoffTimeCalculation(t *testing.T) {
 
 	intvl, err = GetExponentialBackoffTime(3, 1*time.Second)
 	assert.Error(t, err)
+}
+
+func TestGetRequestErrorInfo(t *testing.T) {
+	type Respdata struct {
+		Error string `json:"error"`
+		Reqid string `json:"request_id"`
+	}
+	rdata := Respdata{
+		"someerror",
+		"somereqid",
+	}
+	data, err := json.Marshal(rdata)
+	assert.Nil(t, err, "%v", err)
+	einfo, err := getRequestErrorInfo(ioutil.NopCloser(bytes.NewReader(data)))
+	assert.Nil(t, err)
+	assert.Equal(t, "someerror: requestID: somereqid", einfo)
+
+	data, err = json.Marshal(Respdata{}) // no error message, thus no request-id
+	assert.Nil(t, err)
+	einfo, err = getRequestErrorInfo(ioutil.NopCloser(bytes.NewReader(data)))
+	assert.NotNil(t, err)
+	assert.Equal(t, "received no error, and no request-id", err.Error())
+
+	data, err = json.Marshal(Respdata{"somerror", ""})
+	assert.Nil(t, err)
+	einfo, err = getRequestErrorInfo(ioutil.NopCloser(bytes.NewReader(data)))
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "received an error:")
 }

@@ -48,6 +48,11 @@ func (i *InventoryClient) Submit(api ApiRequester, url string, data interface{})
 
 	defer r.Body.Close()
 
+	// log all server-api errors
+	if r.StatusCode >= 500 {
+		logRequestErrorInfo(r.Body)
+	}
+
 	if r.StatusCode != http.StatusOK {
 		log.Errorf("got unexpected HTTP status when submitting to inventory: %v", r.StatusCode)
 		return errors.Errorf("inventory submit failed, bad status %v", r.StatusCode)

@@ -79,6 +79,9 @@ func (u *StatusClient) Report(api ApiRequester, url string, report StatusReport)
 
 	// HTTP 204 No Content
 	switch {
+	case r.StatusCode != http.StatusOK:
+		logRequestErrorInfo(r.Body)
+		fallthrough
 	case r.StatusCode == http.StatusConflict:
 		log.Warnf("status report rejected, deployment aborted at the backend")
 		return ErrDeploymentAborted

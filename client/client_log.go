@@ -53,6 +53,11 @@ func (u *LogUploadClient) Upload(api ApiRequester, url string, logs LogData) err
 
 	defer r.Body.Close()
 
+	// log all server-api errors
+	if r.StatusCode >= 500 {
+		logRequestErrorInfo(r.Body)
+	}
+
 	// HTTP 204 No Content
 	if r.StatusCode != http.StatusNoContent {
 		log.Errorf("got unexpected HTTP status when uploading log: %v", r.StatusCode)

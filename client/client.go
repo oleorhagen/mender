@@ -16,8 +16,10 @@ package client
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -98,6 +100,35 @@ func (ar *ApiRequest) Do(req *http.Request) (*http.Response, error) {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ar.auth))
 	}
 	return ar.api.Do(req)
+}
+
+func logRequestErrorInfo(rbody io.ReadCloser) {
+	if einfo, err := getRequestErrorInfo(rbody); err != nil {
+		log.Errorf("%v", err)
+	} else {
+		log.Error(einfo)
+	}
+}
+
+func getRequestErrorInfo(respBody io.ReadCloser) (string, error) {
+	reqID := struct {
+		Error string `json:"error"`
+		ReqID string `json:"request_id"`
+	}{}
+	err := json.NewDecoder(respBody).Decode(&reqID)
+	if err != nil {
+		return "", fmt.Errorf("failed to unmarshal request ID from failed api request: %v", err)
+	}
+	if reqID.Error != "" && reqID.ReqID == "" {
+		return "", fmt.Errorf("received an error: %v from the server, but no request id", reqID.Error)
+	}
+	if reqID.Error == "" && reqID.ReqID != "" {
+		return "", errors.New("received a request id, but no error")
+	}
+	if reqID.Error != "" && reqID.ReqID != "" {
+		return strings.Join([]string{reqID.Error, reqID.ReqID}, ": requestID: "), nil
+	}
+	return "", fmt.Errorf("received no error, and no request-id")
 }
 
 func NewApiClient(conf Config) (*ApiClient, error) {
