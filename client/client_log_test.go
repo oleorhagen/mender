@@ -14,6 +14,9 @@
 package client
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLogUploadClient(t *testing.T) {
@@ -28,16 +32,19 @@ func TestLogUploadClient(t *testing.T) {
 		httpStatus int
 		recdata    []byte
 		path       string
+		header     http.Header
 	}{
 		http.StatusNoContent, // 204
 		[]byte{},
 		"",
+		nil,
 	}
 
 	// Test server that always responds with 200 code, and specific payload
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(responder.httpStatus)
 
+		responder.header = r.Header
 		responder.recdata, _ = ioutil.ReadAll(r.Body)
 		responder.path = r.URL.Path
 	}))
@@ -65,6 +72,12 @@ func TestLogUploadClient(t *testing.T) {
 	err = client.Upload(ac, ts.URL, ld)
 	assert.NoError(t, err)
 	assert.NotNil(t, responder.recdata)
+	assert.Equal(t, "gzip", responder.header.Get("Content-Encoding"), "Content-Encoding should be set to gzip")
+	gzr, err := gzip.NewReader(bytes.NewReader(responder.recdata))
+	require.Nil(t, err)
+	var jbytes bytes.Buffer
+	_, err = io.Copy(&jbytes, gzr)
+	require.Nil(t, err)
 	assert.JSONEq(t, `{
 	  "messages": [
 	      {
@@ -77,7 +90,7 @@ func TestLogUploadClient(t *testing.T) {
 	          "level": "debug",
 	          "msg": "log bar"
 	      }
-	   ]}`, string(responder.recdata))
+	   ]}`, jbytes.String())
 	assert.Equal(t, apiPrefix+"deployments/device/deployments/deployment1/log", responder.path)
 
 	responder.httpStatus = 401

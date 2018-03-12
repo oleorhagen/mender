@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"strings"
 	"time"
 
@@ -96,6 +97,9 @@ func (ar *ApiRequest) Do(req *http.Request) (*http.Response, error) {
 	if req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ar.auth))
 	}
+
+	dump, _ := httputil.DumpRequestOut(req, true)
+	fmt.Println(string(dump))
 	return ar.api.Do(req)
 }
 

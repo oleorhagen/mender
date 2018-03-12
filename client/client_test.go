@@ -14,6 +14,10 @@
 package client
 
 import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -25,6 +29,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHttpClient(t *testing.T) {
@@ -57,13 +62,19 @@ func TestApiClientRequest(t *testing.T) {
 	responder := &struct {
 		httpStatus int
 		headers    http.Header
+		body       io.ReadCloser
 	}{
 		http.StatusOK,
 		http.Header{},
+		nil,
 	}
 
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		responder.headers = r.Header
+		var buf bytes.Buffer
+		io.Copy(&buf, r.Body)
+		fmt.Printf("request body: %s\n", buf.String())
+		responder.body = ioutil.NopCloser(&buf)
 		w.WriteHeader(responder.httpStatus)
 		w.Header().Set("Content-Type", "application/json")
 	}))
@@ -85,6 +96,22 @@ func TestApiClientRequest(t *testing.T) {
 	assert.NotNil(t, rsp)
 	assert.NotNil(t, responder.headers)
 	assert.Equal(t, "Bearer zed", responder.headers.Get("Authorization"))
+
+	hreq, _ = http.NewRequest(http.MethodPost, ts.URL, bytes.NewBufferString("foobar"))
+
+	// dump, err := httputil.DumpRequestOut(hreq, true)
+	// require.Nil(t, err)
+	// fmt.Println(string(dump))
+
+	// request should be compressed, and the accept-encoding header set to gzip
+	_, err = req.Do(hreq)
+	assert.Equal(t, "gzip", responder.headers.Get("Content-Encoding"), "gzip header not set")
+	require.Nil(t, err)
+	require.Equal(t, "gzip", responder.headers.Get("Accept-Encoding"), "gzip header not set")
+	// decompress the body
+	zr, err := gzip.NewReader(responder.body)
+	require.Nil(t, err)
+	assert.Equal(t, "foobar", zr, "request and response bodies differ")
 }
 
 func TestClientConnectionTimeout(t *testing.T) {

@@ -15,7 +15,9 @@ package client
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/mendersoftware/log"
@@ -68,11 +70,21 @@ func makeLogUploadRequest(server string, logs *LogData) (*http.Request, error) {
 		logs.DeploymentID)
 	url := buildApiURL(server, path)
 
-	hreq, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(logs.Messages))
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := io.Copy(zw, bytes.NewReader(logs.Messages)); err != nil {
+		return nil, errors.Wrap(err, "failed to compress the request body")
+	}
+	if err := zw.Close(); err != nil {
+		return nil, errors.Wrap(err, "failed to close gzip writer")
+	}
+
+	hreq, err := http.NewRequest(http.MethodPut, url, &buf)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create log sending HTTP request")
 	}
 
+	hreq.Header.Add("Content-Encoding", "gzip")
 	hreq.Header.Add("Content-Type", "application/json")
 	return hreq, nil
 }
