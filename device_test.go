@@ -1,4 +1,4 @@
-// Copyright 2017 Northern.tech AS
+// Copyright 2018 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -78,7 +78,7 @@ func Test_enableUpdatedPartition_wrongPartitinNumber_fails(t *testing.T) {
 	fakeEnv := uBootEnv{&runner}
 
 	testPart := partitions{}
-	testPart.inactive = "inactive"
+	testPart.inactive = NewPartition("inactive")
 
 	testDevice := device{}
 	testDevice.partitions = &testPart
@@ -94,7 +94,7 @@ func Test_enableUpdatedPartition_correctPartitinNumber(t *testing.T) {
 	fakeEnv := uBootEnv{&runner}
 
 	testPart := partitions{}
-	testPart.inactive = "inactive2"
+	testPart.inactive = NewPartition("inactive2")
 
 	testDevice := device{}
 	testDevice.partitions = &testPart
@@ -114,15 +114,15 @@ func Test_installUpdate_existingAndNonInactivePartition(t *testing.T) {
 	testDevice := device{}
 
 	fakePartitions := partitions{}
-	fakePartitions.inactive = "/non/existing"
+	fakePartitions.inactive = NewPartition("/non/existing")
 	testDevice.partitions = &fakePartitions
 
 	if err := testDevice.InstallUpdate(nil, 0); err == nil {
-		t.FailNow()
+		t.Fatalf("Zero length image should not install: %v", err)
 	}
 
 	os.Create("inactivePart")
-	fakePartitions.inactive = "inactivePart"
+	fakePartitions.inactive = NewPartition("inactivePart")
 	defer os.Remove("inactivePart")
 
 	image, _ := os.Create("imageFile")
@@ -139,12 +139,12 @@ func Test_installUpdate_existingAndNonInactivePartition(t *testing.T) {
 	BlockDeviceGetSectorSizeOf = func(file *os.File) (int, error) { return int(len(imageContent)), nil }
 
 	if err := testDevice.InstallUpdate(image, int64(len(imageContent))); err != nil {
-		t.FailNow()
+		t.Fatalf("failed to install image: %v", err)
 	}
 
 	BlockDeviceGetSizeOf = func(file *os.File) (uint64, error) { return 0, errors.New("") }
 	if err := testDevice.InstallUpdate(image, int64(len(imageContent))); err == nil {
-		t.FailNow()
+		t.Fatal("zero sized blocks should not be installed: %v", err)
 	}
 	BlockDeviceGetSizeOf = old
 	BlockDeviceGetSectorSizeOf = oldSectorSizeOf
@@ -170,7 +170,7 @@ func Test_Rollback_OK(t *testing.T) {
 	fakeEnv := uBootEnv{&runner}
 
 	testPart := partitions{}
-	testPart.inactive = "part2"
+	testPart.inactive = NewPartition("part2")
 
 	testDevice := device{}
 	testDevice.partitions = &testPart

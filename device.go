@@ -16,10 +16,8 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/mendersoftware/log"
 	"github.com/pkg/errors"
@@ -40,17 +38,26 @@ var (
 	errorNoUpgradeMounted = errors.New("There is nothing to commit")
 )
 
-func NewDevice(env BootEnvReadWriter, sc StatCommander, config deviceConfig) *device {
+func NewDevice(env BootEnvReadWriter, sc StatCommander, config deviceConfig) (*device, error) {
+	rtfsa, err := NewPartition(config.rootfsPartA)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize rootfsPartA")
+	}
+	rtfsb, err := NewPartition(config.rootfsPartB)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize rootfsPartB")
+	}
 	partitions := partitions{
 		StatCommander:     sc,
 		BootEnvReadWriter: env,
-		rootfsPartA:       config.rootfsPartA,
-		rootfsPartB:       config.rootfsPartB,
-		active:            "",
-		inactive:          "",
+		// TODO - should this simply be a string?
+		rootfsPartA: rtfsa,
+		rootfsPartB: rtfsb,
+		active:      rtfsa,
+		inactive:    rtfsb,
 	}
 	device := device{env, sc, &partitions}
-	return &device
+	return &device, nil
 }
 
 func (d *device) Reboot() error {
@@ -75,69 +82,22 @@ func (d *device) SwapPartitions() error {
 }
 
 func (d *device) InstallUpdate(image io.ReadCloser, size int64) error {
-
 	log.Debugf("Trying to install update of size: %d", size)
 	if image == nil || size < 0 {
 		return errors.New("Have invalid update. Aborting.")
 	}
-
 	inactivePartition, err := d.GetInactive()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to get the inactive partition")
 	}
-
-	typeUBI := isUbiBlockDevice(inactivePartition)
-	if typeUBI {
-		// UBI block devices are not prefixed with /dev due to the fact
-		// that the kernel root= argument does not handle UBI block
-		// devices which are prefixed with /dev
-		//
-		// Kernel root= only accepts:
-		// - ubi0_0
-		// - ubi:rootfsa
-		inactivePartition = filepath.Join("/dev", inactivePartition)
+	// TODO - check write length(?)
+	var n int64
+	if n, err = io.Copy(inactivePartition, image); err != nil {
+		fmt.Println(n)
+		return errors.Wrap(err, "failed to install the new image")
 	}
-
-	b := &BlockDevice{Path: inactivePartition, typeUBI: typeUBI, ImageSize: size}
-
-	if bsz, err := b.Size(); err != nil {
-		log.Errorf("failed to read size of block device %s: %v",
-			inactivePartition, err)
-		return err
-	} else if bsz < uint64(size) {
-		log.Errorf("update (%v bytes) is larger than the size of device %s (%v bytes)",
-			size, inactivePartition, bsz)
-		return syscall.ENOSPC
-	}
-
-	ssz, err := b.SectorSize()
-	if err != nil {
-		log.Errorf("failed to read sector size of block device %s: %v",
-			inactivePartition, err)
-		return err
-	}
-
-	// allocate buffer based on sector size and provide it for staging
-	// in io.CopyBuffer
-	buf := make([]byte, ssz)
-
-	w, err := io.CopyBuffer(b, image, buf)
-	if err != nil {
-		log.Errorf("failed to write image data to device %v: %v",
-			inactivePartition, err)
-	}
-
-	log.Infof("wrote %v/%v bytes of update to device %v",
-		w, size, inactivePartition)
-
-	if cerr := b.Close(); cerr != nil {
-		log.Errorf("closing device %v failed: %v", inactivePartition, cerr)
-		if err != nil {
-			return cerr
-		}
-	}
-
-	return err
+	fmt.Println(n)
+	return nil
 }
 
 func (d *device) getInactivePartition() (string, string, error) {
@@ -148,10 +108,10 @@ func (d *device) getInactivePartition() (string, string, error) {
 
 	log.Debugf("Marking inactive partition (%s) as the new boot candidate.", inactivePartition)
 
-	partitionNumberDecStr := inactivePartition[len(strings.TrimRight(inactivePartition, "0123456789")):]
+	partitionNumberDecStr := inactivePartition.String()[len(strings.TrimRight(inactivePartition.String(), "0123456789")):]
 	partitionNumberDec, err := strconv.Atoi(partitionNumberDecStr)
 	if err != nil {
-		return "", "", errors.New("Invalid inactive partition: " + inactivePartition)
+		return "", "", errors.New("Invalid inactive partition: " + inactivePartition.String())
 	}
 
 	partitionNumberHexStr := fmt.Sprintf("%X", partitionNumberDec)

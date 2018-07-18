@@ -1,4 +1,4 @@
-// Copyright 2017 Northern.tech AS
+// Copyright 2018 Northern.tech AS
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -15,9 +15,11 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/mendersoftware/log"
 	"github.com/mendersoftware/mender/utils"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -34,11 +36,42 @@ type BlockDeviceGetSectorSizeFunc func(file *os.File) (int, error)
 // BlockDevice is a low-level wrapper for a block device. The wrapper implements
 // io.Writer and io.Closer interfaces.
 type BlockDevice struct {
-	Path      string               // device path, ex. /dev/mmcblk0p1
-	out       *os.File             // os.File for writing
-	w         *utils.LimitedWriter // wrapper for `out` limited the number of bytes written
-	typeUBI   bool                 // Set to true if we are updating an UBI volume
-	ImageSize int64                // image size
+	Path       string               // device path, ex. /dev/mmcblk0p1
+	out        *os.File             // os.File for writing
+	w          *utils.LimitedWriter // wrapper for `out` limited the number of bytes written
+	typeUBI    bool                 // Set to true if we are updating an UBI volume
+	ImageSize  int64                // image size
+	sectorSize int
+	deviceSize uint64
+}
+
+func NewBlockDevice(path string) (*BlockDevice, error) {
+
+	typeUBI := isUbiBlockDevice(path)
+	if typeUBI {
+		// UBI block devices are not prefixed with /dev due to the fact
+		// that the kernel root= argument does not handle UBI block
+		// devices which are prefixed with /dev
+		//
+		// Kernel root= only accepts:
+		// - ubi0_0
+		// - ubi:rootfsa
+		path = filepath.Join("/dev", path)
+	}
+	b := &BlockDevice{Path: path, typeUBI: typeUBI} // TODO - blockdevice needs , `ImageSize: size`, before writing.
+	bsz, err := b.Size()
+	if err != nil {
+		log.Errorf("failed to read size of block device %s: %v", path, err)
+		return nil, errors.Wrapf(err, "failed to read the size of the block device %s", path)
+	}
+	b.deviceSize = bsz
+	ssz, err := b.SectorSize()
+	if err != nil {
+		log.Errorf("failed to read sector size of block device %s: %v", path, err)
+		return nil, errors.Wrapf(err, "failed to read sector size of block device %s", path)
+	}
+	b.sectorSize = ssz
+	return b, nil
 }
 
 // Write writes data `p` to underlying block device. Will automatically open

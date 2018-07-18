@@ -432,7 +432,10 @@ func doMain(args []string) error {
 	}
 
 	env := NewEnvironment(new(osCalls))
-	device := NewDevice(env, new(osCalls), config.GetDeviceConfig())
+	device, err := NewDevice(env, new(osCalls), config.GetDeviceConfig())
+	if err != nil {
+		return errors.Wrap(err, "doMain: failed to initialize device")
+	}
 	ap, err := device.GetActive()
 	if err != nil {
 		log.Errorf("Failed to read the current active partition: %s", err.Error())

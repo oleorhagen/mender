@@ -47,13 +47,13 @@ func Test_GetInactive_HaveActivePartitionSet_ReturnsInactive(t *testing.T) {
 		fakePartitions := partitions{
 			StatCommander:     new(osCalls),
 			BootEnvReadWriter: new(uBootEnv),
-			rootfsPartA:       testData.rootfsPartA,
-			rootfsPartB:       testData.rootfsPartB,
-			active:            testData.active,
-			inactive:          testData.inactive,
+			active:            NewPartition(testData.active),
+			inactive:          NewPartition(testData.inactive),
+			rootfsPartA:       NewPartition(testData.rootfsPartA),
+			rootfsPartB:       NewPartition(testData.rootfsPartB),
 		}
 		inactive, err := fakePartitions.GetInactive()
-		if err != testData.expectedError || strings.Compare(testData.expected, inactive) != 0 {
+		if err != testData.expectedError || strings.Compare(testData.expected, inactive.String()) != 0 {
 			t.Fatal(err)
 		}
 	}
@@ -156,10 +156,10 @@ func Test_getActivePartition_noActiveInactiveSet(t *testing.T) {
 	fakePartitions := partitions{
 		StatCommander:     &testOS,
 		BootEnvReadWriter: &fakeEnv,
-		rootfsPartA:       "/dev/mmcblk0p2",
-		rootfsPartB:       "/dev/mmcblk0p3",
-		active:            "",
-		inactive:          "",
+		rootfsPartA:       NewPartition("/dev/mmcblk0p2"),
+		rootfsPartB:       NewPartition("/dev/mmcblk0p3"),
+		active:            NewPartition(""),
+		inactive:          NewPartition(""),
 	}
 
 	trueChecker := func(StatCommander, string, *syscall.Stat_t) bool { return true }
@@ -194,7 +194,7 @@ func Test_getActivePartition_noActiveInactiveSet(t *testing.T) {
 		envCaller.retCode = test.fakeEnvRet
 		active, err := fakePartitions.getAndCacheActivePartition(test.rootChecker, mountedDevicesGetter)
 		errorOK := (err == test.expectedError || strings.Contains(err.Error(), test.expectedError.Error()))
-		assert.True(t, errorOK && active == test.expectedActive)
+		assert.True(t, errorOK && active.String() == test.expectedActive)
 	}
 }
 
