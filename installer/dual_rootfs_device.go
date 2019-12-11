@@ -151,6 +151,8 @@ func (d *dualRootfsDeviceImpl) PrepareStoreUpdate() error {
 // Data is held in memory until chunkSize bytes are available to be written.
 func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWritten int64, err error) {
 	buf := bytes.NewBuffer(make([]byte, 0, chunkSize))
+	var skippedChunks int64 = 0
+	var totalChunksWritten int64 = 0
 
 	for {
 		buf.Reset()
@@ -173,6 +175,7 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 			if bytes.Equal(buf.Bytes(), deviceBuf) {
 				// The data has not changed so no-op
 				totalWritten += bytesRead
+				skippedChunks += 1
 			} else {
 				// Write the data which has changed to the device
 
@@ -195,6 +198,7 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 					)
 				}
 			}
+			totalChunksWritten += 1
 		}
 
 		if readErr != nil {
@@ -202,8 +206,12 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 			if readErr == io.EOF {
 				readErr = nil
 			}
-			return totalWritten, readErr
 		}
+		infofstr := "Wrote a total of %d chunks of data, with a size of %d bytes. " +
+			"Where a total of %d of these chunks were skipped, as they matched " +
+			"what was already present on the block-device"
+		log.Infof(infofstr, totalChunksWritten, chunkSize, skippedChunks)
+		return totalWritten, readErr
 	}
 }
 
