@@ -179,8 +179,6 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 			} else {
 				// Write the data which has changed to the device
 
-				// TODO -- Remove me
-
 				// In order to write, we need to seek back to
 				// the start of the chunk.
 				if _, err = out.Seek(-bytesRead, io.SeekCurrent); err != nil {
