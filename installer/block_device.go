@@ -154,6 +154,16 @@ func (bd *BlockDevice) Write(p []byte) (int, error) {
 	return w, err
 }
 
+// Seek wraps the underlying seek method of the bd.out *os.File.
+func (bd *BlockDevice) Seek(offset int64, whence int) (int64, error) {
+	return bd.out.Seek(offset, whence)
+}
+
+// Read wraps the underlying read method of the bd.out *os.File.
+func (bd *BlockDevice) Read(b []byte) (int, error) {
+	return bd.out.Read(b)
+}
+
 // Close closes underlying block device automatically syncing any unwritten
 // data. Othewise, behaves like io.Closer.
 func (bd *BlockDevice) Close() error {

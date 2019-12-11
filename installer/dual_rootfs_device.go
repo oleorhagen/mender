@@ -147,10 +147,9 @@ func (d *dualRootfsDeviceImpl) PrepareStoreUpdate() error {
 	return nil
 }
 
-// chunkedCopy copies data from in to out in chunks of exactly chunkSize
-// bytes.
+// chunkedCopy copies data from in to out in chunks of exactly chunkSize bytes.
 // Data is held in memory until chunkSize bytes are available to be written.
-func chunkedCopy(out io.Writer, in io.Reader, chunkSize int64) (totalWritten int64, err error) {
+func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWritten int64, err error) {
 	buf := bytes.NewBuffer(make([]byte, 0, chunkSize))
 
 	for {
@@ -159,19 +158,42 @@ func chunkedCopy(out io.Writer, in io.Reader, chunkSize int64) (totalWritten int
 		bytesRead, readErr := io.CopyN(buf, in, chunkSize)
 
 		if bytesRead > 0 {
-			// write all of buf to out
-			bytesWritten, writeErr := buf.WriteTo(out)
-			totalWritten += bytesWritten
+			// MEN-2939: Compare the contents of the block, with the
+			// block from the rootfs update stream.
 
-			if writeErr != nil {
-				return totalWritten, writeErr
+			// #1 Read `bytesRead` from the device, to compare with the bytes read from the
+			// payload stream
+
+			deviceBuf := make([]byte, bytesRead)
+			if _, err := io.ReadFull(out, deviceBuf); err != nil {
+				return 0, errors.Wrapf(err, "Failed to read '%d' bytes from the storage device", bytesRead)
 			}
-			if bytesWritten != bytesRead {
-				return totalWritten, fmt.Errorf(
-					"Unexpected short write: attempted %d bytes but only wrote %d",
-					bytesRead,
-					bytesWritten,
-				)
+
+			// #2 Compare the byte buffers
+			if bytes.Equal(buf.Bytes(), deviceBuf) {
+				// The data has not changed so no-op
+				totalWritten += bytesRead
+			} else {
+				// Write the data which has changed to the device
+
+				// In order to write, we need to seek back to
+				// the start of the chunk.
+				if _, err = out.Seek(-bytesRead, io.SeekCurrent); err != nil {
+					return bytesRead, err
+				}
+				bytesWritten, writeErr := buf.WriteTo(out)
+				totalWritten += bytesWritten
+
+				if writeErr != nil {
+					return totalWritten, writeErr
+				}
+				if bytesWritten != bytesRead {
+					return totalWritten, fmt.Errorf(
+						"Unexpected short write: attempted %d bytes but only wrote %d",
+						bytesRead,
+						bytesWritten,
+					)
+				}
 			}
 		}
 

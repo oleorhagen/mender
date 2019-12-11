@@ -31,6 +31,14 @@ func (mw *MyWriter) Write(data []byte) (n int, err error) {
 	return
 }
 
+func (mw *MyWriter) Read(b []byte) (n int, err error) {
+	return 1, nil
+}
+
+func (mw *MyWriter) Seek(int64, int) (n int64, err error) {
+	return 1, nil
+}
+
 func (mw *MyWriter) GetTotalOutput() []byte {
 	return mw.writtenData.Bytes()
 
