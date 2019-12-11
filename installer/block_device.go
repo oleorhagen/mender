@@ -162,6 +162,59 @@ func (bd *BlockDevice) Seek(offset int64, whence int) (int64, error) {
 
 // Read wraps the underlying read method of the bd.out *os.File.
 func (bd *BlockDevice) Read(b []byte) (int, error) {
+	// TODO -- Create an open call instead (?)
+	if bd.out == nil {
+		log.Infof("opening device %s for writing", bd.Path)
+		out, err := os.OpenFile(bd.Path, os.O_WRONLY, 0)
+		if err != nil {
+			return 0, err
+		}
+
+		var wrappedOut io.Writer
+
+		wrappedOut = out
+
+		// From <mtd/ubi-user.h>
+		//
+		// UBI volume update
+		// ~~~~~~~~~~~~~~~~~
+		//
+		// Volume update should be done via the UBI_IOCVOLUP ioctl command of the
+		// corresponding UBI volume character device. A pointer to a 64-bit update
+		// size should be passed to the ioctl. After this, UBI expects user to write
+		// this number of bytes to the volume character device. The update is finished
+		// when the claimed number of bytes is passed. So, the volume update sequence
+		// is something like:
+		//
+		// fd = open("/dev/my_volume");
+		// ioctl(fd, UBI_IOCVOLUP, &image_size);
+		// write(fd, buf, image_size);
+		// close(fd);
+		if bd.typeUBI {
+			err := system.SetUbiUpdateVolume(out, bd.ImageSize)
+			if err != nil {
+				log.Errorf("Failed to write images size to UBI_IOCVOLUP: %v", err)
+				return 0, err
+			}
+		} else {
+			wrappedOut = NewFlushingWriter(out, bd.FlushIntervalBytes)
+		}
+
+		size, err := BlockDeviceGetSizeOf(out)
+		if err != nil {
+			log.Errorf("failed to read block device size: %v", err)
+			out.Close()
+			return 0, err
+		}
+		log.Infof("partition %s size: %v", bd.Path, size)
+
+		bd.out = out
+		bd.w = &utils.LimitedWriter{
+			W: wrappedOut,
+			N: size,
+		}
+	}
+
 	return bd.out.Read(b)
 }
 
