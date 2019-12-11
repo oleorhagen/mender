@@ -156,6 +156,7 @@ func (bd *BlockDevice) Write(p []byte) (int, error) {
 
 // Seek wraps the underlying seek method of the bd.out *os.File.
 func (bd *BlockDevice) Seek(offset int64, whence int) (int64, error) {
+	// foobar
 	return bd.out.Seek(offset, whence)
 }
 
