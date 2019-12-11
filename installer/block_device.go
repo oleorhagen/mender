@@ -96,7 +96,7 @@ func (fw *FlushingWriter) Sync() error {
 func (bd *BlockDevice) Write(p []byte) (int, error) {
 	if bd.out == nil {
 		log.Infof("opening device %s for writing", bd.Path)
-		out, err := os.OpenFile(bd.Path, os.O_WRONLY, 0)
+		out, err := os.OpenFile(bd.Path, os.O_RDWR, 0)
 		if err != nil {
 			return 0, err
 		}
@@ -165,7 +165,7 @@ func (bd *BlockDevice) Read(b []byte) (int, error) {
 	// TODO -- Create an open call instead (?)
 	if bd.out == nil {
 		log.Infof("opening device %s for writing", bd.Path)
-		out, err := os.OpenFile(bd.Path, os.O_WRONLY, 0)
+		out, err := os.OpenFile(bd.Path, os.O_RDWR, 0)
 		if err != nil {
 			return 0, err
 		}
