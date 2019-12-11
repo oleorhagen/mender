@@ -169,8 +169,6 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 				return 0, errors.Wrapf(err, "Failed to read '%d' bytes from the storage device", bytesRead)
 			}
 
-			// TODO -- Remove me!
-
 			// #2 Compare the byte buffers
 			if bytes.Equal(buf.Bytes(), deviceBuf) {
 				// The data has not changed so no-op
