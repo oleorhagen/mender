@@ -179,6 +179,8 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 			} else {
 				// Write the data which has changed to the device
 
+				// TODO -- Remove me
+
 				// In order to write, we need to seek back to
 				// the start of the chunk.
 				if _, err = out.Seek(-bytesRead, io.SeekCurrent); err != nil {
@@ -206,12 +208,12 @@ func chunkedCopy(out io.ReadWriteSeeker, in io.Reader, chunkSize int64) (totalWr
 			if readErr == io.EOF {
 				readErr = nil
 			}
+			infofstr := "Wrote a total of %d chunks of data, with a size of %d bytes. " +
+				"Where a total of %d of these chunks were skipped, as they matched " +
+				"what was already present on the block-device"
+			log.Infof(infofstr, totalChunksWritten, chunkSize, skippedChunks)
+			return totalWritten, readErr
 		}
-		infofstr := "Wrote a total of %d chunks of data, with a size of %d bytes. " +
-			"Where a total of %d of these chunks were skipped, as they matched " +
-			"what was already present on the block-device"
-		log.Infof(infofstr, totalChunksWritten, chunkSize, skippedChunks)
-		return totalWritten, readErr
 	}
 }
 
