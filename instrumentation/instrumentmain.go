@@ -243,9 +243,11 @@ var testmainTmplStr string = `
 package main
 
 import (
-	"testing"
   "fmt"
   "io/ioutil"
+  "os/exec"
+	"testing"
+  "time"
 
 // Import all the GoCover variables from the packages which are coverage instrumented
   {{range $i, $ci := .CoverInfo}}
@@ -339,12 +341,40 @@ func coverReport() {
 
 }
 
+// All this code is simply stolen from the
+// client reboot routine.
+func rebootClient() {
+	err := exec.Command("reboot").Run()
+	if err != nil {
+		os.Exit(1)
+	}
+
+	// Wait up to ten minutes for reboot to kill the client, otherwise the
+	// client may mistake a successful return code as "reboot is complete,
+	// continue". *Any* return from this function is an error.
+	time.Sleep(10 * time.Minute)
+	fmt.Println("System did not reboot, even though 'reboot' call succeeded.")
+}
+
 // NOTE: main is automatically generated, and used for coverage analysis
 func main() {
 
+	// The client panics instead of rebooting, so that we can capture the
+	// coverage logs, before rebooting.
+	defer func() {
+		if r := recover(); r != nil {
+        if s, ok := r.(string); ok && s == "Client needs reboot!" {
+						coverReport()
+						rebootClient()
+        } else {
+            panic(r)
+        }
+		}
+	}()
+
     ret := doMain()
 
-    coverReport() // Manually create and call
+    coverReport() // Manually create the coverage report before exiting
 
     os.Exit(ret)
 

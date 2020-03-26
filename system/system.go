@@ -17,7 +17,6 @@ package system
 import (
 	"os"
 	"os/exec"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -32,17 +31,14 @@ func NewSystemRebootCmd(command Commander) *SystemRebootCmd {
 	}
 }
 
+// Reboot has been changed to handle coverage analysis. This means that the
+// function now panics, instead of rebooting. The panic is caught in the main
+// function, which then generates the coverage analysis, and then reboots.
 func (s *SystemRebootCmd) Reboot() error {
-	err := s.command.Command("reboot").Run()
-	if err != nil {
-		return err
-	}
-
-	// Wait up to ten minutes for reboot to kill the client, otherwise the
-	// client may mistake a successful return code as "reboot is complete,
-	// continue". *Any* return from this function is an error.
-	time.Sleep(10 * time.Minute)
-	return errors.New("System did not reboot, even though 'reboot' call succeeded.")
+	// Exit the client cleanly prior to rebooting, so that coverage can be
+	// recorded by the test framework
+	panic("Client needs reboot!")
+	return errors.New("Failed to exit. Wtf")
 }
 
 type Commander interface {
