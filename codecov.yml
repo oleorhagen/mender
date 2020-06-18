@@ -1,6 +1,11 @@
+
+comment:
+  after_n_builds: 8
+
 coverage:
   status:
     project:
+      after_n_builds: 8
       acceptance:
         flags:
           - acceptance
