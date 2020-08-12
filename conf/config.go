@@ -31,11 +31,7 @@ type MenderConfigFromFile struct {
 	// Path to the public key used to verify signed updates
 	ArtifactVerifyKey string
 	// HTTPS client parameters
-	HttpsClient struct {
-		Certificate string
-		Key         string
-		SkipVerify  bool
-	}
+	client.HttpsClient
 	// Rootfs device path
 	RootfsPartA string
 	RootfsPartB string
@@ -64,6 +60,8 @@ type MenderConfigFromFile struct {
 
 	// Path to server SSL certificate
 	ServerCertificate string
+	// Private key
+	PrivateKey string
 	// Server URL (For single server conf)
 	ServerURL string
 	// Path to deployment log file
@@ -162,6 +160,17 @@ func (c *MenderConfig) Validate() error {
 		}
 	}
 
+	// Check if both the 'ServerCertificate' and 'PrivateKey' fields are set
+	if c.HttpsClient.Certificate != "" || c.HttpsClient.Key != "" {
+		if c.HttpsClient.Certificate == ""  {
+			log.Error("The 'PrivateKey' field is set in the mTLS configuration, but no 'ServerCertificate' is given. Both need to be present in order for mTLS to function")
+		}
+		if c.HttpsClient.Key == "" {
+			log.Error("The 'ServerCertificate' field is set in the mTLS configuration, but no 'PrivateKey' is given. Both need to be present in order for mTLS to function")
+		}
+	}
+
+
 	log.Debugf("Verified configuration = %#v", c)
 
 	return nil
@@ -222,10 +231,30 @@ func SaveConfigFile(config *MenderConfigFromFile, filename string) error {
 	return nil
 }
 
+func maybeHTTPSClient(c *MenderConfig) *client.HttpsClient {
+	if c.HttpsClient.Certificate != "" && c.HttpsClient.Key != "" {
+		return &c.HttpsClient
+	}
+	// TODO -- Duplicate of the above functionality - merge
+	// Check if both the 'ServerCertificate' and 'PrivateKey' fields are set
+	if c.HttpsClient.Certificate != "" || c.HttpsClient.Key != "" {
+		if c.HttpsClient.Certificate == ""  {
+			log.Error("The 'PrivateKey' field is set in the mTLS configuration, but no 'ServerCertificate' is given. Both need to be present in order for mTLS to function")
+		}
+		if c.HttpsClient.Key == "" {
+			log.Error("The 'ServerCertificate' field is set in the mTLS configuration, but no 'PrivateKey' is given. Both need to be present in order for mTLS to function")
+		}
+	}
+	return nil
+}
+
 func (c *MenderConfig) GetHttpConfig() client.Config {
 	return client.Config{
 		ServerCert: c.ServerCertificate,
 		IsHttps:    c.ClientProtocol == "https",
+		// The HttpsClient config is only loaded when both a cert and
+		// key is given
+		HttpsClient: maybeHTTPSClient(c),
 		NoVerify:   c.HttpsClient.SkipVerify,
 	}
 }

@@ -14,17 +14,15 @@
 package client
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"io/ioutil"
 
 	"github.com/mendersoftware/openssl"
 	"github.com/pkg/errors"
@@ -42,6 +40,7 @@ const (
 	errMissingCerts = "No trusted certificates. The client will continue running, but will " +
 		"not be able to communicate with the server. Either specify ServerCertificate in " +
 		"mender.conf, or make sure that CA certificates are installed on the system"
+
 )
 
 var (
@@ -65,6 +64,7 @@ var (
 
 	// connection keepalive options
 	connectionKeepaliveTime = 10 * time.Second
+
 )
 
 // Mender API Client wrapper. A standard http.Client is compatible with this
@@ -281,21 +281,97 @@ func newHttpClient() *http.Client {
 	return &http.Client{}
 }
 
+func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
+	// Trust CA's in the standard location (/etc/ssl/certs), and the
+	// configured server certificate when building the certificate chain
+	err := ctx.LoadVerifyLocations(conf.ServerCert, "/etc/ssl/certs/")
+	return ctx, err
+}
+
+func loadClientTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
+
+	if conf.HttpsClient == nil {
+		return ctx, errors.New("Empty HttpsClient config given")
+
+	}
+	certFile := conf.HttpsClient.Certificate
+	keyFile := conf.HttpsClient.Key
+
+	certBytes, err := ioutil.ReadFile(certFile)
+	if err != nil {
+		return ctx, errors.Wrap(err, "Failed to read the certificate file for the HttpsClient")
+	}
+
+	certs := openssl.SplitPEM(certBytes)
+	if len(certs) == 0 {
+		return ctx, fmt.Errorf("No PEM certificate found in '%s'", certFile)
+	}
+	first, certs := certs[0], certs[1:]
+	cert, err := openssl.LoadCertificateFromPEM(first)
+	if err != nil {
+		return ctx, err
+	}
+
+	err = ctx.UseCertificate(cert)
+	if err != nil {
+		return ctx, err
+	}
+
+	for _, pem := range certs {
+		cert, err := openssl.LoadCertificateFromPEM(pem)
+		if err != nil {
+			return ctx, err
+		}
+		err = ctx.AddChainCertificate(cert)
+		if err != nil {
+			return ctx, err
+		}
+	}
+
+	keyBytes, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		return ctx, errors.Wrap(err, "Private key file from the HttpsClient configuration not found")
+	}
+
+	key, err := openssl.LoadPrivateKeyFromPEM(keyBytes)
+	if err != nil {
+		return ctx, err
+	}
+
+	err = ctx.UsePrivateKey(key)
+	if err != nil {
+		return ctx, err
+	}
+
+	return ctx, nil
+}
+
 func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
-	contextSSL, err := openssl.NewCtx()
-	// probably should consider reusing the context, but then we
-	// have to propagate it with every request.
-	err = contextSSL.LoadVerifyLocations(conf.ServerCert, "")
+
+	ctx, err := openssl.NewCtx()
 	if err != nil {
 		return nil, err
 	}
+
+	ctx, err = loadServerTrust(ctx, &conf)
+	if err != nil {
+		return nil, err
+	}
+
+	if conf.HttpsClient != nil {
+		ctx, err = loadClientTrust(ctx, &conf)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	flags := openssl.DialFlags(0)
 
 	if conf.NoVerify {
 		flags = openssl.InsecureSkipHostVerification
 	}
 
-	conn, err := openssl.Dial("tcp", addr, contextSSL, flags)
+	conn, err := openssl.Dial("tcp", addr, ctx, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -327,18 +403,11 @@ func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
 func newHttpsClient(conf Config) (*http.Client, error) {
 	client := newHttpClient()
 
-	trustedcerts := loadServerTrust(&conf)
-
 	if conf.NoVerify {
 		log.Warnf("certificate verification skipped..")
 	}
-	tlsc := tls.Config{
-		RootCAs:            trustedcerts,
-		InsecureSkipVerify: conf.NoVerify,
-	}
 	transport := http.Transport{
-		TLSClientConfig: &tlsc,
-		Proxy:           http.ProxyFromEnvironment,
+		Proxy: http.ProxyFromEnvironment,
 		DialTLS: func(network string, addr string) (net.Conn, error) {
 			return dialOpenSSL(conf, network, addr)
 		},
@@ -350,64 +419,18 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 
 // Client configuration
 
+// HttpsClient holds the configuration for the client side mTLS configuration
+type HttpsClient struct {
+	Certificate string
+	Key         string
+	SkipVerify  bool
+}
+
 type Config struct {
-	ServerCert string
 	IsHttps    bool
-	NoVerify   bool
-}
-
-type systemCertPoolGetter interface {
-	GetSystemCertPool() (*x509.CertPool, error)
-}
-
-type systemCertPool struct{}
-
-func (systemCertPool) GetSystemCertPool() (*x509.CertPool, error) {
-	return x509.SystemCertPool()
-}
-
-func loadServerTrust(conf *Config) *x509.CertPool {
-	return loadServerTrustImpl(conf, systemCertPool{})
-}
-
-func loadServerTrustImpl(conf *Config, scp systemCertPoolGetter) *x509.CertPool {
-	syscerts, err := scp.GetSystemCertPool()
-	if err != nil {
-		log.Warnf("Error when loading system certificates: %s", err.Error())
-	}
-
-	// Read certificate file.
-	servcert, err := ioutil.ReadFile(conf.ServerCert)
-	if err != nil {
-		// Ignore server certificate error  (See: MEN-2378)
-		log.Warnf(errMissingServerCertF, err.Error())
-	}
-
-	if syscerts == nil {
-		log.Warn("No system certificates found.")
-		syscerts = x509.NewCertPool()
-	}
-
-	if len(servcert) > 0 {
-		block, _ := pem.Decode(servcert)
-		if block != nil {
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err == nil {
-				log.Infof("API Gateway certificate (in PEM format): \n%s", string(servcert))
-				log.Infof("Issuer: %s, Valid from: %s, Valid to: %s",
-					cert.Issuer.Organization, cert.NotBefore, cert.NotAfter)
-			} else {
-				log.Warnf("Unparseable certificate '%s': %s", conf.ServerCert, err.Error())
-			}
-		}
-
-		syscerts.AppendCertsFromPEM(servcert)
-	}
-
-	if len(syscerts.Subjects()) == 0 {
-		log.Error(errMissingCerts)
-	}
-	return syscerts
+	ServerCert string
+	*HttpsClient
+	NoVerify bool
 }
 
 func buildURL(server string) string {
