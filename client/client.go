@@ -32,6 +32,11 @@ import (
 
 const (
 	apiPrefix = "/api/devices/v1/"
+
+	errMissingServerCertF = "IGNORING ERROR: The client server-certificate can not be " +
+		"loaded: (%s). The client will continue running, but may not be able to " +
+		"communicate with the server. If this is not your intention please add a valid " +
+		"server certificate"
 )
 
 var (
@@ -275,6 +280,9 @@ func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 	// Trust CA's in the standard location (/etc/ssl/certs), and the
 	// configured server certificate when building the certificate chain
 	err := ctx.LoadVerifyLocations(conf.ServerCert, "/etc/ssl/certs/")
+	if err != nil && strings.Contains(err.Error(), "No such file or directory") {
+		log.Errorf(errMissingServerCertF, conf.ServerCert)
+	}
 	return ctx, err
 }
 
@@ -336,24 +344,7 @@ func loadClientTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 	return ctx, nil
 }
 
-func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
-
-	ctx, err := openssl.NewCtx()
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, err = loadServerTrust(ctx, &conf)
-	if err != nil {
-		return nil, err
-	}
-
-	if conf.HttpsClient != nil {
-		ctx, err = loadClientTrust(ctx, &conf)
-		if err != nil {
-			return nil, err
-		}
-	}
+func dialOpenSSL(ctx *openssl.Ctx, serverCert string, network string, addr string) (net.Conn, error) {
 
 	flags := openssl.DialFlags(0)
 
@@ -366,22 +357,22 @@ func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
 	if v != openssl.Ok {
 		if v == openssl.CertHasExpired {
 			return nil, errors.Errorf("certificate has expired, "+
-				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
+				"openssl verify rc: %d server cert file: %s", v, serverCert)
 		}
 		if v == openssl.DepthZeroSelfSignedCert {
 			return nil, errors.Errorf("depth zero self-signed certificate, "+
-				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
+				"openssl verify rc: %d server cert file: %s", v, serverCert)
 		}
 		if v == openssl.EndEntityKeyTooSmall {
 			return nil, errors.Errorf("end entity key too short, "+
-				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
+				"openssl verify rc: %d server cert file: %s", v, serverCert)
 		}
 		if v == openssl.UnableToGetIssuerCertLocally {
 			return nil, errors.Errorf("certificate signed by unknown authority, "+
-				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
+				"openssl verify rc: %d server cert file: %s", v, serverCert)
 		}
 		return nil, errors.Errorf("not a valid certificate, "+
-			"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
+			"openssl verify rc: %d server cert file: %s", v, serverCert)
 	}
 	return conn, err
 }
@@ -389,10 +380,27 @@ func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
 func newHttpsClient(conf Config) (*http.Client, error) {
 	client := newHttpClient()
 
+	ctx, err := openssl.NewCtx()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, err = loadServerTrust(ctx, &conf)
+	if err != nil {
+		log.Warn("Failed to load the server TLS certificate settings")
+	}
+
+	if conf.HttpsClient != nil {
+		ctx, err = loadClientTrust(ctx, &conf)
+		if err != nil {
+			log.Warn("Failed to load the client TLS certificate settings")
+		}
+	}
+
 	transport := http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialTLS: func(network string, addr string) (net.Conn, error) {
-			return dialOpenSSL(conf, network, addr)
+			return dialOpenSSL(ctx, conf.ServerCert, network, addr)
 		},
 	}
 
