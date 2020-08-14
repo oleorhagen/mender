@@ -40,7 +40,6 @@ const (
 	errMissingCerts = "No trusted certificates. The client will continue running, but will " +
 		"not be able to communicate with the server. Either specify ServerCertificate in " +
 		"mender.conf, or make sure that CA certificates are installed on the system"
-
 )
 
 var (
@@ -64,7 +63,6 @@ var (
 
 	// connection keepalive options
 	connectionKeepaliveTime = 10 * time.Second
-
 )
 
 // Mender API Client wrapper. A standard http.Client is compatible with this

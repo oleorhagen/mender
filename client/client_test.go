@@ -221,7 +221,7 @@ func TestCALoading(t *testing.T) {
 				conf: Config{
 					HttpsClient: nil,
 				},
-				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
+				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
 						assert.Contains(t, err.Error(), "Empty HttpsClient config given")
 				},
@@ -233,7 +233,7 @@ func TestCALoading(t *testing.T) {
 						Key:         "foobar",
 					},
 				},
-				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
+				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
 						assert.Contains(t, err.Error(), "Failed to read the certificate")
 				},
@@ -245,7 +245,7 @@ func TestCALoading(t *testing.T) {
 						Key:         "foobar",
 					},
 				},
-				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
+				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
 						assert.Contains(t, err.Error(), "No PEM certificate found in")
 				},
@@ -257,7 +257,7 @@ func TestCALoading(t *testing.T) {
 						Key:         "non-existing.key",
 					},
 				},
-				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
+				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
 						assert.Contains(t, err.Error(), "Private key file from the ")
 				},
@@ -269,7 +269,7 @@ func TestCALoading(t *testing.T) {
 						Key:         "wrong.key",
 					},
 				},
-				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
+				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
 						assert.Contains(t, err.Error(), "key values mismatch")
 				},
