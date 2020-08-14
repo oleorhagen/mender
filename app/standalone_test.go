@@ -144,7 +144,6 @@ func Test_doManualUpdate_networkClientExistsNoServer_fail(t *testing.T) {
 	fakeClientConfig := client.Config{
 		ServerCert: "server.crt",
 		IsHttps:    true,
-		NoVerify:   false,
 	}
 
 	config := conf.MenderConfig{}

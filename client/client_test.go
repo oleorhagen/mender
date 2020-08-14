@@ -48,7 +48,7 @@ func dummy_srvMngmntFunc(url string) func() *MenderServer {
 
 func TestHttpClient(t *testing.T) {
 	cl, _ := NewApiClient(
-		Config{ServerCert: "server.crt", IsHttps: true, NoVerify: false},
+		Config{ServerCert: "server.crt", IsHttps: true},
 	)
 	assert.NotNil(t, cl)
 
@@ -58,7 +58,7 @@ func TestHttpClient(t *testing.T) {
 
 	// missing cert in config should still yield usable client
 	cl, err := NewApiClient(
-		Config{ServerCert: "missing.crt", IsHttps: true, NoVerify: false},
+		Config{ServerCert: "missing.crt", IsHttps: true},
 	)
 	assert.NotNil(t, cl)
 	assert.NoError(t, err)
@@ -66,7 +66,7 @@ func TestHttpClient(t *testing.T) {
 
 func TestApiClientRequest(t *testing.T) {
 	cl, _ := NewApiClient(
-		Config{ServerCert: "server.crt", IsHttps: true, NoVerify: false},
+		Config{ServerCert: "server.crt", IsHttps: true},
 	)
 	assert.NotNil(t, cl)
 
@@ -152,7 +152,7 @@ func TestClientConnectionTimeout(t *testing.T) {
 	}()
 
 	cl, err := NewApiClient(
-		Config{ServerCert: "server.crt", IsHttps: true, NoVerify: false},
+		Config{ServerCert: "server.crt", IsHttps: true},
 	)
 	assert.NotNil(t, cl)
 	assert.NoError(t, err)
@@ -201,7 +201,6 @@ func TestCALoading(t *testing.T) {
 			IsHttps:     true,
 			ServerCert:  "missing.crt",
 			HttpsClient: nil,
-			NoVerify:    false,
 		})
 		assert.Error(t, err)
 
@@ -209,7 +208,6 @@ func TestCALoading(t *testing.T) {
 			IsHttps:     true,
 			ServerCert:  "server.crt",
 			HttpsClient: nil,
-			NoVerify:    false,
 		})
 		assert.NoError(t, err)
 	})
@@ -222,7 +220,6 @@ func TestCALoading(t *testing.T) {
 			"No HttpsClient given": {
 				conf: Config{
 					HttpsClient: nil,
-					NoVerify:    false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
 					return assert.Error(t, err) &&
@@ -235,7 +232,6 @@ func TestCALoading(t *testing.T) {
 						Certificate: "missing.crt",
 						Key:         "foobar",
 					},
-					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
 					return assert.Error(t, err) &&
@@ -248,7 +244,6 @@ func TestCALoading(t *testing.T) {
 						Certificate: "client.go",
 						Key:         "foobar",
 					},
-					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
 					return assert.Error(t, err) &&
@@ -261,7 +256,6 @@ func TestCALoading(t *testing.T) {
 						Certificate: "client.crt",
 						Key:         "non-existing.key",
 					},
-					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
 					return assert.Error(t, err) &&
@@ -274,7 +268,6 @@ func TestCALoading(t *testing.T) {
 						Certificate: "client.crt",
 						Key:         "wrong.key",
 					},
-					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool{
 					return assert.Error(t, err) &&
@@ -287,7 +280,6 @@ func TestCALoading(t *testing.T) {
 						Certificate: "client.crt",
 						Key:         "client-cert.key",
 					},
-					NoVerify: false,
 				},
 				assertFunc: assert.NoError,
 			},
@@ -386,7 +378,7 @@ func TestUnMarshalErrorMessage(t *testing.T) {
 // In addition it also covers the case with a 'nil' ServerManagementFunc.
 func TestFailoverAPICall(t *testing.T) {
 	cl, _ := NewApiClient(
-		Config{ServerCert: "server.crt", IsHttps: true, NoVerify: false},
+		Config{ServerCert: "server.crt", IsHttps: true},
 	)
 	assert.NotNil(t, cl)
 

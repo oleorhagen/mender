@@ -367,10 +367,6 @@ func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
 
 	flags := openssl.DialFlags(0)
 
-	if conf.NoVerify {
-		flags = openssl.InsecureSkipHostVerification
-	}
-
 	conn, err := openssl.Dial("tcp", addr, ctx, flags)
 	if err != nil {
 		return nil, err
@@ -403,9 +399,6 @@ func dialOpenSSL(conf Config, network string, addr string) (net.Conn, error) {
 func newHttpsClient(conf Config) (*http.Client, error) {
 	client := newHttpClient()
 
-	if conf.NoVerify {
-		log.Warnf("certificate verification skipped..")
-	}
 	transport := http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialTLS: func(network string, addr string) (net.Conn, error) {
@@ -423,14 +416,12 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 type HttpsClient struct {
 	Certificate string
 	Key         string
-	SkipVerify  bool
 }
 
 type Config struct {
 	IsHttps    bool
 	ServerCert string
 	*HttpsClient
-	NoVerify bool
 }
 
 func buildURL(server string) string {

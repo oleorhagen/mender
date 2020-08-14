@@ -46,7 +46,7 @@ func TestStatusClient(t *testing.T) {
 	defer ts.Close()
 
 	ac, err := NewApiClient(
-		Config{ServerCert: "server.crt", IsHttps: true, NoVerify: false},
+		Config{ServerCert: "server.crt", IsHttps: true},
 	)
 	assert.NotNil(t, ac)
 	assert.NoError(t, err)

@@ -364,10 +364,6 @@ func SetupCLI(args []string) error {
 			Name:        "no-syslog",
 			Usage:       "Disable logging to syslog.",
 			Destination: &runOptions.logOptions.noSyslog},
-		&cli.BoolFlag{
-			Name:        "skipverify",
-			Usage:       "Skip certificate verification.",
-			Destination: &runOptions.Config.NoVerify},
 	}
 	cli.HelpPrinter = upgradeHelpPrinter(cli.HelpPrinter)
 	cli.VersionPrinter = func(c *cli.Context) {
@@ -399,10 +395,6 @@ func (runOptions *runOptionsType) commonCLIHandler(
 		if err != nil {
 			return nil, nil, err
 		}
-	}
-
-	if runOptions.Config.NoVerify {
-		config.HttpsClient.SkipVerify = true
 	}
 
 	env := installer.NewEnvironment(new(system.OsCalls))
