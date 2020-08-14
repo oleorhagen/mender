@@ -32,14 +32,6 @@ import (
 
 const (
 	apiPrefix = "/api/devices/v1/"
-
-	errMissingServerCertF = "IGNORING ERROR: The client server-certificate can not be " +
-		"loaded: (%s). The client will continue running, but may not be able to " +
-		"communicate with the server. If this is not your intention please add a valid " +
-		"server certificate"
-	errMissingCerts = "No trusted certificates. The client will continue running, but will " +
-		"not be able to communicate with the server. Either specify ServerCertificate in " +
-		"mender.conf, or make sure that CA certificates are installed on the system"
 )
 
 var (
