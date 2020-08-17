@@ -1115,7 +1115,7 @@ func TestMutualTLSClientConnection(t *testing.T) {
 	require.NoError(t, err)
 
 	correctClientCertPool := x509.NewCertPool()
-	pb, err := ioutil.ReadFile("../client/client.crt")
+	pb, err := ioutil.ReadFile("../client/testdata/client.crt")
 	require.NoError(t, err)
 	correctClientCertPool.AppendCertsFromPEM(pb)
 
@@ -1133,8 +1133,8 @@ func TestMutualTLSClientConnection(t *testing.T) {
 			conf: conf.MenderConfigFromFile{
 				ServerCertificate: "../client/test/server.crt",
 				HttpsClient: client.HttpsClient{
-					Certificate: "../client/server.crt", // Wrong
-					Key:         "../client/client-cert.key",
+					Certificate: "../client/testdata/server.crt", // Wrong
+					Key:         "../client/testdata/client-cert.key",
 				},
 			},
 			assertFunc: func(t assert.TestingT, err error, srvLog []byte, msgAndArgs ...interface{}) {
@@ -1144,10 +1144,10 @@ func TestMutualTLSClientConnection(t *testing.T) {
 		},
 		"Error: Wrong server certificate": {
 			conf: conf.MenderConfigFromFile{
-				ServerCertificate: "../client/client.crt", // Wrong
+				ServerCertificate: "../client/testdata/client.crt", // Wrong
 				HttpsClient: client.HttpsClient{
-					Certificate: "../client/client.crt",
-					Key:         "../client/client-cert.key",
+					Certificate: "../client/testdata/client.crt",
+					Key:         "../client/testdata/client-cert.key",
 				},
 			},
 			assertFunc: func(t assert.TestingT, err error, srvLog []byte, msgAndArgs ...interface{}) {
@@ -1159,8 +1159,8 @@ func TestMutualTLSClientConnection(t *testing.T) {
 			conf: conf.MenderConfigFromFile{
 				ServerCertificate: "../client/test/server.crt",
 				HttpsClient: client.HttpsClient{
-					Certificate: "../client/client.crt",
-					// Key: "../client/client-cert.key", // Missing
+					Certificate: "../client/testdata/client.crt",
+					// Key: "../client/testdata/client-cert.key", // Missing
 				},
 			},
 			assertFunc: func(t assert.TestingT, err error, srvLog []byte, msgAndArgs ...interface{}) {
@@ -1172,8 +1172,8 @@ func TestMutualTLSClientConnection(t *testing.T) {
 			conf: conf.MenderConfigFromFile{
 				ServerCertificate: "../client/test/server.crt",
 				HttpsClient: client.HttpsClient{
-					// Certificate: "../client/client.crt", // Missing
-					Key: "../client/client-cert.key",
+					// Certificate: "../client/testdata/client.crt", // Missing
+					Key: "../client/testdata/client-cert.key",
 				},
 			},
 			assertFunc: func(t assert.TestingT, err error, srvLog []byte, msgAndArgs ...interface{}) {
@@ -1185,8 +1185,8 @@ func TestMutualTLSClientConnection(t *testing.T) {
 			conf: conf.MenderConfigFromFile{
 				ServerCertificate: "../client/test/server.crt",
 				HttpsClient: client.HttpsClient{
-					Certificate: "../client/client.crt",
-					Key:         "../client/client-cert.key",
+					Certificate: "../client/testdata/client.crt",
+					Key:         "../client/testdata/client-cert.key",
 				},
 			},
 			assertFunc: func(t assert.TestingT, err error, srvLog []byte, msgAndArgs ...interface{}) {
