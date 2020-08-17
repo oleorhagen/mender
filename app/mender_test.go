@@ -1210,7 +1210,6 @@ func TestMutualTLSClientConnection(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			srv := cltest.NewClientTestServer(
 				cltest.Options{
 					TLSConfig: &tc,
