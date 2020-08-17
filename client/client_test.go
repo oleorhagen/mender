@@ -250,6 +250,17 @@ func TestCALoading(t *testing.T) {
 						assert.Contains(t, err.Error(), "No PEM certificate found in")
 				},
 			},
+			"Certificate chain loading": {
+				conf: Config{
+					HttpsClient: &HttpsClient{
+						Certificate: "testdata/chain-cert.crt",
+						Key:         "testdata/client-cert.key",
+					},
+				},
+				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
+					return assert.NoError(t, err)
+				},
+			},
 			"Missing Private key file": {
 				conf: Config{
 					HttpsClient: &HttpsClient{
