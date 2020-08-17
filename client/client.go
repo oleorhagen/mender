@@ -416,6 +416,21 @@ type HttpsClient struct {
 	Key         string
 }
 
+func (h *HttpsClient) Validate() {
+	if h == nil {
+		return
+	}
+	// Check if both the 'ServerCertificate' and 'PrivateKey' fields are set
+	if h.Certificate != "" || h.Key != "" {
+		if h.Certificate == "" {
+			log.Error("The 'PrivateKey' field is set in the mTLS configuration, but no 'ServerCertificate' is given. Both need to be present in order for mTLS to function")
+		}
+		if h.Key == "" {
+			log.Error("The 'ServerCertificate' field is set in the mTLS configuration, but no 'PrivateKey' is given. Both need to be present in order for mTLS to function")
+		}
+	}
+}
+
 type Config struct {
 	IsHttps    bool
 	ServerCert string

@@ -160,15 +160,7 @@ func (c *MenderConfig) Validate() error {
 		}
 	}
 
-	// Check if both the 'ServerCertificate' and 'PrivateKey' fields are set
-	if c.HttpsClient.Certificate != "" || c.HttpsClient.Key != "" {
-		if c.HttpsClient.Certificate == "" {
-			log.Error("The 'PrivateKey' field is set in the mTLS configuration, but no 'ServerCertificate' is given. Both need to be present in order for mTLS to function")
-		}
-		if c.HttpsClient.Key == "" {
-			log.Error("The 'ServerCertificate' field is set in the mTLS configuration, but no 'PrivateKey' is given. Both need to be present in order for mTLS to function")
-		}
-	}
+	c.HttpsClient.Validate()
 
 	log.Debugf("Verified configuration = %#v", c)
 
@@ -234,16 +226,7 @@ func maybeHTTPSClient(c *MenderConfig) *client.HttpsClient {
 	if c.HttpsClient.Certificate != "" && c.HttpsClient.Key != "" {
 		return &c.HttpsClient
 	}
-	// TODO -- Duplicate of the above functionality - merge
-	// Check if both the 'ServerCertificate' and 'PrivateKey' fields are set
-	if c.HttpsClient.Certificate != "" || c.HttpsClient.Key != "" {
-		if c.HttpsClient.Certificate == "" {
-			log.Error("The 'PrivateKey' field is set in the mTLS configuration, but no 'ServerCertificate' is given. Both need to be present in order for mTLS to function")
-		}
-		if c.HttpsClient.Key == "" {
-			log.Error("The 'ServerCertificate' field is set in the mTLS configuration, but no 'PrivateKey' is given. Both need to be present in order for mTLS to function")
-		}
-	}
+	c.HttpsClient.Validate()
 	return nil
 }
 
