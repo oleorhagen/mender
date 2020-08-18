@@ -201,6 +201,7 @@ func TestCALoading(t *testing.T) {
 			IsHttps:     true,
 			ServerCert:  "missing.crt",
 			HttpsClient: nil,
+			NoVerify:    false,
 		})
 		assert.Error(t, err)
 
@@ -208,6 +209,7 @@ func TestCALoading(t *testing.T) {
 			IsHttps:     true,
 			ServerCert:  "testdata/server.crt",
 			HttpsClient: nil,
+			NoVerify:    false,
 		})
 		assert.NoError(t, err)
 	})
@@ -220,6 +222,7 @@ func TestCALoading(t *testing.T) {
 			"No HttpsClient given": {
 				conf: Config{
 					HttpsClient: nil,
+					NoVerify:    false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
@@ -232,6 +235,7 @@ func TestCALoading(t *testing.T) {
 						Certificate: "missing.crt",
 						Key:         "foobar",
 					},
+					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
@@ -244,6 +248,7 @@ func TestCALoading(t *testing.T) {
 						Certificate: "client.go",
 						Key:         "foobar",
 					},
+					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
@@ -267,6 +272,7 @@ func TestCALoading(t *testing.T) {
 						Certificate: "testdata/client.crt",
 						Key:         "non-existing.key",
 					},
+					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
@@ -279,6 +285,7 @@ func TestCALoading(t *testing.T) {
 						Certificate: "testdata/client.crt",
 						Key:         "testdata/wrong.key",
 					},
+					NoVerify: false,
 				},
 				assertFunc: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
 					return assert.Error(t, err) &&
@@ -291,6 +298,7 @@ func TestCALoading(t *testing.T) {
 						Certificate: "testdata/client.crt",
 						Key:         "testdata/client-cert.key",
 					},
+					NoVerify: false,
 				},
 				assertFunc: assert.NoError,
 			},

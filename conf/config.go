@@ -235,6 +235,7 @@ func (c *MenderConfig) GetHttpConfig() client.Config {
 		// The HttpsClient config is only loaded when both a cert and
 		// key is given
 		HttpsClient: maybeHTTPSClient(c),
+		NoVerify:   c.HttpsClient.SkipVerify,
 	}
 }
 

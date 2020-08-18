@@ -345,9 +345,13 @@ func loadClientTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 	return ctx, nil
 }
 
-func dialOpenSSL(ctx *openssl.Ctx, serverCert string, network string, addr string) (net.Conn, error) {
+func dialOpenSSL(ctx *openssl.Ctx, conf *Config, network string, addr string) (net.Conn, error) {
 
 	flags := openssl.DialFlags(0)
+
+	if conf.NoVerify {
+		flags = openssl.InsecureSkipHostVerification
+	}
 
 	conn, err := openssl.Dial("tcp", addr, ctx, flags)
 	if err != nil {
@@ -358,22 +362,22 @@ func dialOpenSSL(ctx *openssl.Ctx, serverCert string, network string, addr strin
 	if v != openssl.Ok {
 		if v == openssl.CertHasExpired {
 			return nil, errors.Errorf("certificate has expired, "+
-				"openssl verify rc: %d server cert file: %s", v, serverCert)
+				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
 		}
 		if v == openssl.DepthZeroSelfSignedCert {
 			return nil, errors.Errorf("depth zero self-signed certificate, "+
-				"openssl verify rc: %d server cert file: %s", v, serverCert)
+				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
 		}
 		if v == openssl.EndEntityKeyTooSmall {
 			return nil, errors.Errorf("end entity key too short, "+
-				"openssl verify rc: %d server cert file: %s", v, serverCert)
+				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
 		}
 		if v == openssl.UnableToGetIssuerCertLocally {
 			return nil, errors.Errorf("certificate signed by unknown authority, "+
-				"openssl verify rc: %d server cert file: %s", v, serverCert)
+				"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
 		}
 		return nil, errors.Errorf("not a valid certificate, "+
-			"openssl verify rc: %d server cert file: %s", v, serverCert)
+			"openssl verify rc: %d server cert file: %s", v, conf.ServerCert)
 	}
 	return conn, err
 }
@@ -398,10 +402,13 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 		}
 	}
 
+	if conf.NoVerify {
+		log.Warnf("certificate verification skipped..")
+	}
 	transport := http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialTLS: func(network string, addr string) (net.Conn, error) {
-			return dialOpenSSL(ctx, conf.ServerCert, network, addr)
+			return dialOpenSSL(ctx, &conf, network, addr)
 		},
 	}
 
@@ -415,6 +422,7 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 type HttpsClient struct {
 	Certificate string
 	Key         string
+	SkipVerify  bool
 }
 
 func (h *HttpsClient) Validate() {
@@ -436,6 +444,7 @@ type Config struct {
 	IsHttps    bool
 	ServerCert string
 	*HttpsClient
+	NoVerify bool
 }
 
 func buildURL(server string) string {

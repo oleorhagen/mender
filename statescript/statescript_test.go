@@ -373,7 +373,7 @@ func TestReportScriptStatus(t *testing.T) {
 	defer ts.Close()
 
 	ac, err := client.NewApiClient(
-		client.Config{ServerCert: "", IsHttps: false},
+		client.Config{ServerCert: "", IsHttps: false, NoVerify: true},
 	)
 	assert.NotNil(t, ac)
 	assert.NoError(t, err)
