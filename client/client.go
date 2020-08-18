@@ -421,7 +421,6 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 type HttpsClient struct {
 	Certificate string
 	Key         string
-	SkipVerify  bool
 }
 
 func (h *HttpsClient) Validate() {
