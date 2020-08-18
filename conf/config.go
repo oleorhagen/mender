@@ -60,8 +60,6 @@ type MenderConfigFromFile struct {
 
 	// Path to server SSL certificate
 	ServerCertificate string
-	// Private key
-	PrivateKey string
 	// Server URL (For single server conf)
 	ServerURL string
 	// Path to deployment log file
