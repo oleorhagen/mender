@@ -19,7 +19,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -281,7 +280,7 @@ func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 	// Trust CA's in the standard location (/etc/ssl/certs), and the
 	// configured server certificate when building the certificate chain
 	err := ctx.LoadVerifyLocations(conf.ServerCert, "/etc/ssl/certs/")
-	if os.IsNotExist(err) {
+	if err != nil && strings.Contains(err.Error(), "No such file or directory"){
 		log.Errorf(errMissingServerCertF, conf.ServerCert)
 	}
 	return ctx, err

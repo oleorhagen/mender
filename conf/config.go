@@ -43,6 +43,9 @@ type MenderConfigFromFile struct {
 	// Poll interval for periodically sending inventory data
 	InventoryPollIntervalSeconds int
 
+	// Skip CA certificate validation
+	SkipVerify bool
+
 	// Global retry polling max interval for fetching update, authorize wait and update status
 	RetryPollIntervalSeconds int
 
@@ -235,7 +238,7 @@ func (c *MenderConfig) GetHttpConfig() client.Config {
 		// The HttpsClient config is only loaded when both a cert and
 		// key is given
 		HttpsClient: maybeHTTPSClient(c),
-		NoVerify:   c.HttpsClient.SkipVerify,
+		NoVerify:   c.SkipVerify,
 	}
 }
 
