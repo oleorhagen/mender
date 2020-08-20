@@ -190,9 +190,7 @@ func TestHttpClientUrl(t *testing.T) {
 	assert.Equal(t, "https://foo.bar/api/devices/v1/zed", u)
 }
 
-// Test that our loaded certificates include the system CAs, and our own.
-func TestCALoading(t *testing.T) {
-
+func TestLoadingTrust(t *testing.T) {
 	t.Run("Test loading server trust", func(t *testing.T) {
 		ctx, err := openssl.NewCtx()
 		assert.NoError(t, err)
