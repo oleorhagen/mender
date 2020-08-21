@@ -37,6 +37,9 @@ const (
 		"loaded: (%s). The client will continue running, but may not be able to " +
 		"communicate with the server. If this is not your intention please add a valid " +
 		"server certificate"
+	errMissingCerts = "No trusted certificates. The client will continue running, but will " +
+		"not be able to communicate with the server. Either specify ServerCertificate in " +
+		"mender.conf, or make sure that CA certificates are installed on the system"
 )
 
 var (
@@ -276,20 +279,64 @@ func newHttpClient() *http.Client {
 	return &http.Client{}
 }
 
+func listSystemCertsFound(certDir string) (int ,error) {
+	sysCertsFound := 0
+	dummyCtx, err := openssl.NewCtx()
+	if err != nil {
+		return 0, errors.New("Failed to load a new OpenSSL Ctx. The client will not be able to communicate with the server, unless OpenSSL is setup properly")
+	}
+	files, err := ioutil.ReadDir(certDir)
+	if err != nil {
+		return 0, fmt.Errorf("Failed to read the OpenSSL default directory. Err %v", err.Error())
+	}
+	for _, certFile := range files {
+		certBytes, err := ioutil.ReadFile(certFile.Name())
+		if err != nil {
+			log.Debugf("Failed to read the certificate file for the HttpsClient. Err %v", err.Error())
+			continue
+		}
+
+		certs := openssl.SplitPEM(certBytes)
+		if len(certs) == 0 {
+			log.Debugf("No PEM certificate found in '%s'", certFile)
+			continue
+		}
+		first, certs := certs[0], certs[1:]
+		cert, err := openssl.LoadCertificateFromPEM(first)
+		if err != nil {
+			log.Debug(err.Error())
+		} else {
+			sysCertsFound += 1
+		}
+	}
+	return sysCertsFound, nil
+}
+
 func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
-	d, err := openssl.GetDefaultCertificateDirectory()
+	defaultCertDir, err := openssl.GetDefaultCertificateDirectory()
 	if err != nil {
 		return ctx, errors.New("Failed to get the default OpenSSL certificate directory. Please verify the OpenSSL setup")
 	}
-
+	sysCertsFound, err := listSystemCertsFound(defaultCertDir)
+	if err != nil {
+		log.Warnf("Failed to list the system certificates with error: %v", err)
+	}
 
 	e := ctx.SetDefaultVerifyLocations()
 	if e != 1 {
 		return ctx, fmt.Errorf("Failed to set the default OpenSSL directory. OpenSSL error code: %d", e)
 	}
-	err := ctx.LoadVerifyLocations(conf.ServerCert, "")
-	if err != nil && strings.Contains(err.Error(), "No such file or directory") {
-		log.Errorf(errMissingServerCertF, conf.ServerCert)
+	err = ctx.LoadVerifyLocations(conf.ServerCert, "")
+	if err != nil {
+		if strings.Contains(err.Error(), "No such file or directory") {
+
+			log.Errorf(errMissingServerCertF, conf.ServerCert)
+		} else {
+			log.Errorf("Failed to Load the Server certificate. Err %v", err.Error())
+		}
+		if sysCertsFound == 0 {
+			log.Error(errMissingCerts)
+		}
 	}
 	return ctx, err
 }
