@@ -277,10 +277,18 @@ func newHttpClient() *http.Client {
 }
 
 func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
-	// Trust CA's in the standard location (/etc/ssl/certs), and the
-	// configured server certificate when building the certificate chain
-	err := ctx.LoadVerifyLocations(conf.ServerCert, "/etc/ssl/certs/")
-	if err != nil && strings.Contains(err.Error(), "No such file or directory"){
+	d, err := openssl.GetDefaultCertificateDirectory()
+	if err != nil {
+		return ctx, errors.New("Failed to get the default OpenSSL certificate directory. Please verify the OpenSSL setup")
+	}
+
+
+	e := ctx.SetDefaultVerifyLocations()
+	if e != 1 {
+		return ctx, fmt.Errorf("Failed to set the default OpenSSL directory. OpenSSL error code: %d", e)
+	}
+	err := ctx.LoadVerifyLocations(conf.ServerCert, "")
+	if err != nil && strings.Contains(err.Error(), "No such file or directory") {
 		log.Errorf(errMissingServerCertF, conf.ServerCert)
 	}
 	return ctx, err
