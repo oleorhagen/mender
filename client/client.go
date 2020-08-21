@@ -418,6 +418,8 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 // Client configuration
 
 // HttpsClient holds the configuration for the client side mTLS configuration
+// NOTE: Careful when changing this, the struct is exposed directly in the
+// 'mender.conf' file.
 type HttpsClient struct {
 	Certificate string
 	Key         string
