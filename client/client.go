@@ -280,7 +280,7 @@ func newHttpClient() *http.Client {
 	return &http.Client{}
 }
 
-func listSystemCertsFound(certDir string) (int ,error) {
+func listSystemCertsFound(certDir string) (int, error) {
 	sysCertsFound := 0
 	files, err := ioutil.ReadDir(certDir)
 	if err != nil {
