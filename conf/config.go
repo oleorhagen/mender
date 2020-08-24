@@ -31,7 +31,7 @@ type MenderConfigFromFile struct {
 	// Path to the public key used to verify signed updates
 	ArtifactVerifyKey string
 	// HTTPS client parameters
-	client.HttpsClient
+	HttpsClient client.HttpsClient
 	// Rootfs device path
 	RootfsPartA string
 	RootfsPartB string

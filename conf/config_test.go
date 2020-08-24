@@ -93,6 +93,10 @@ func validateConfiguration(t *testing.T, actual *MenderConfig) {
 		RootfsPartA:                  "/dev/mmcblk0p2",
 		RootfsPartB:                  "/dev/mmcblk0p3",
 		UpdatePollIntervalSeconds:    10,
+		HttpsClient: client.HttpsClient{
+			Certificate: "/data/client.crt",
+			Key: "/data/client.key",
+		},
 		InventoryPollIntervalSeconds: 60,
 		ServerURL:                    "mender.io",
 		ServerCertificate:            "/var/lib/mender/server.crt",
