@@ -319,9 +319,9 @@ func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 		log.Warnf("Failed to list the system certificates with error: %v", err)
 	}
 
-	e := ctx.SetDefaultVerifyLocations()
-	if e != 1 {
-		return ctx, fmt.Errorf("Failed to set the default OpenSSL directory. OpenSSL error code: %d", e)
+	err = ctx.SetDefaultVerifyPaths()
+	if err != nil {
+		return ctx, fmt.Errorf("Failed to set the default OpenSSL directory. OpenSSL error code: %s", err.Error())
 	}
 	err = ctx.LoadVerifyLocations(conf.ServerCert, "")
 	if err != nil {
