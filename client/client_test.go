@@ -17,8 +17,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -450,4 +452,41 @@ func TestFailoverAPICall(t *testing.T) {
 
 	_, err = req.Do(hreq)
 	assert.Error(t, err)
+}
+
+func TestListSystemCertsFound(t *testing.T) {
+	// Setup tmpdir with two certificates and one private key
+	tdir, err := ioutil.TempDir("", "TestListSystemCertsFound")
+	require.NoError(t, err)
+	require.NoError(t, os.Link("./testdata/server.crt", tdir+"/server.crt"))
+	require.NoError(t, os.Link("./testdata/chain-cert.crt", tdir+"/chain-cert.crt"))
+	require.NoError(t, os.Link("./testdata/wrong.key", tdir+"/wrong.key"))
+	defer os.Remove(tdir)
+	tests := map[string]struct {
+		certDir              string
+		assertFunc           func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool
+		certificatesExpected int
+	}{
+		"No such directory": {
+			certDir:              "/i/do/not/exist",
+			assertFunc:           assert.Error,
+			certificatesExpected: 0,
+		},
+		"No system certificates found": {
+			certDir:              "..", // There should be no certificates in the root of our repo
+			assertFunc:           assert.NoError,
+			certificatesExpected: 0,
+		},
+		"System certificates found": {
+			certDir:              tdir,
+			assertFunc:           assert.NoError,
+			certificatesExpected: 2,
+		},
+	}
+
+	for _, test := range tests {
+		sysCerts, err := listSystemCertsFound(test.certDir)
+		test.assertFunc(t, err)
+		assert.Equal(t, test.certificatesExpected, sysCerts)
+	}
 }

@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -281,16 +282,12 @@ func newHttpClient() *http.Client {
 
 func listSystemCertsFound(certDir string) (int ,error) {
 	sysCertsFound := 0
-	dummyCtx, err := openssl.NewCtx()
-	if err != nil {
-		return 0, errors.New("Failed to load a new OpenSSL Ctx. The client will not be able to communicate with the server, unless OpenSSL is setup properly")
-	}
 	files, err := ioutil.ReadDir(certDir)
 	if err != nil {
-		return 0, fmt.Errorf("Failed to read the OpenSSL default directory. Err %v", err.Error())
+		return 0, fmt.Errorf("Failed to read the OpenSSL default directory (%s). Err %v", certDir, err.Error())
 	}
 	for _, certFile := range files {
-		certBytes, err := ioutil.ReadFile(certFile.Name())
+		certBytes, err := ioutil.ReadFile(path.Join(certDir, certFile.Name()))
 		if err != nil {
 			log.Debugf("Failed to read the certificate file for the HttpsClient. Err %v", err.Error())
 			continue
@@ -302,7 +299,7 @@ func listSystemCertsFound(certDir string) (int ,error) {
 			continue
 		}
 		first, certs := certs[0], certs[1:]
-		cert, err := openssl.LoadCertificateFromPEM(first)
+		_, err = openssl.LoadCertificateFromPEM(first)
 		if err != nil {
 			log.Debug(err.Error())
 		} else {
