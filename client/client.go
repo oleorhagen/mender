@@ -443,18 +443,18 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 
 	ctx, err = loadServerTrust(ctx, &conf)
 	if err != nil {
-		log.Warn("Failed to load the server TLS certificate settings")
+		log.Warn(errors.Wrap(err, "Failed to load the server TLS certificate settings"))
 	}
 
 	if conf.HttpsClient != nil {
 		ctx, err = loadClientTrust(ctx, &conf)
 		if err != nil {
-			log.Warn("Failed to load the client TLS certificate settings")
+			log.Warn(errors.Wrap(err, "Failed to load the client TLS certificate settings"))
 		}
 	}
 
 	if conf.NoVerify {
-		log.Warnf("certificate verification skipped..")
+		log.Warn("certificate verification skipped..")
 	}
 	transport := http.Transport{
 		Proxy: http.ProxyFromEnvironment,
