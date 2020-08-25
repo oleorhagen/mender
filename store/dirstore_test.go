@@ -106,4 +106,10 @@ func TestDirStore(t *testing.T) {
 	// closing is a noop, no errors should be reported
 	err = d.Close()
 	assert.NoError(t, err)
+
+	// Test reading from an absolute path
+	tf, err := ioutil.TempFile(tmppath, "abspathtest")
+	assert.NoError(t, err)
+	_, err = d.OpenRead(tf.Name())
+	assert.NoError(t, err)
 }
