@@ -41,6 +41,7 @@ const (
 	errMissingCerts = "No trusted certificates. The client will continue running, but will " +
 		"not be able to communicate with the server. Either specify ServerCertificate in " +
 		"mender.conf, or make sure that CA certificates are installed on the system"
+	pkcs11URIPrefix = "pkcs11:"
 )
 
 var (
@@ -338,6 +339,31 @@ func loadServerTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 	return ctx, err
 }
 
+func loadPrivateKey(conf *Config) (openssl.PrivateKey, error) {
+	var key openssl.PrivateKey
+	keyFile := conf.HttpsClient.Key
+
+	if strings.HasPrefix(keyFile, pkcs11URIPrefix) {
+		e, err := openssl.EngineById(conf.HttpsClient.SSLEngine)
+		key, err = openssl.EngineLoadPrivateKey(e, keyFile)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		keyBytes, err := ioutil.ReadFile(keyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "Private key file from the HttpsClient configuration not found")
+		}
+
+		key, err = openssl.LoadPrivateKeyFromPEM(keyBytes)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return key, nil
+}
+
 func loadClientTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 
 	if conf.HttpsClient == nil {
@@ -345,7 +371,6 @@ func loadClientTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 
 	}
 	certFile := conf.HttpsClient.Certificate
-	keyFile := conf.HttpsClient.Key
 
 	certBytes, err := ioutil.ReadFile(certFile)
 	if err != nil {
@@ -378,12 +403,7 @@ func loadClientTrust(ctx *openssl.Ctx, conf *Config) (*openssl.Ctx, error) {
 		}
 	}
 
-	keyBytes, err := ioutil.ReadFile(keyFile)
-	if err != nil {
-		return ctx, errors.Wrap(err, "Private key file from the HttpsClient configuration not found")
-	}
-
-	key, err := openssl.LoadPrivateKeyFromPEM(keyBytes)
+	key, err := loadPrivateKey(conf)
 	if err != nil {
 		return ctx, err
 	}
@@ -475,6 +495,7 @@ func newHttpsClient(conf Config) (*http.Client, error) {
 type HttpsClient struct {
 	Certificate string
 	Key         string
+	SSLEngine   string
 }
 
 func (h *HttpsClient) Validate() {
