@@ -16,17 +16,23 @@ package utils
 import (
 	"fmt"
 	"io"
+
+	"github.com/oleorhagen/progress/progressbar"
 )
 
 type ProgressWriter struct {
-	Out  io.Writer // progress output
+	Out io.Writer
+	over bool
 	N    int64     // size of the input
 	c    int64     // current count
-	over bool      // set to true of writes have gone over declared N bytes
+	bar *progressbar.Bar
 }
 
 func (p *ProgressWriter) Write(data []byte) (int, error) {
 	n := len(data)
+	if p.bar == nil {
+		p.bar = progressbar.New()
+	}
 
 	p.reportGeneric(n)
 	p.c += int64(n)

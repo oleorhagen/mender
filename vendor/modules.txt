@@ -7,6 +7,8 @@ github.com/bmatsuo/lmdb-go/lmdb
 github.com/davecgh/go-spew/spew
 # github.com/konsorten/go-windows-terminal-sequences v1.0.1
 github.com/konsorten/go-windows-terminal-sequences
+# github.com/mattn/go-isatty v0.0.12
+github.com/mattn/go-isatty
 # github.com/mendersoftware/mender-artifact v0.0.0-20200327144921-a6d237202052
 ## explicit
 github.com/mendersoftware/mender-artifact/areader
@@ -21,6 +23,9 @@ github.com/mendersoftware/mendertesting
 ## explicit
 github.com/mendersoftware/openssl
 github.com/mendersoftware/openssl/utils
+# github.com/oleorhagen/progress v0.0.0 => /home/olepor/go/src/github.com/oleorhagen/progress
+## explicit
+github.com/oleorhagen/progress/progressbar
 # github.com/pkg/errors v0.7.2-0.20160916110212-a887431f7f6e
 ## explicit
 github.com/pkg/errors
@@ -56,7 +61,7 @@ golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
-# golang.org/x/sys v0.0.0-20190924154521-2837fb4f24fe
+# golang.org/x/sys v0.0.0-20200116001909-b77594299b42
 ## explicit
 golang.org/x/sys/unix
 golang.org/x/sys/windows
