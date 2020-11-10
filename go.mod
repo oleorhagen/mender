@@ -8,7 +8,7 @@ require (
 	github.com/mendersoftware/mender-artifact v0.0.0-20200327144921-a6d237202052
 	github.com/mendersoftware/mendertesting v0.0.1
 	github.com/mendersoftware/openssl v1.0.10
-	github.com/oleorhagen/progress v0.0.0
+	github.com/mendersoftware/progressbar v0.0.0
 	github.com/pkg/errors v0.7.2-0.20160916110212-a887431f7f6e
 	github.com/remyoudompheng/go-liblzma v0.0.0-20190506200333-81bf2d431b96 // indirect
 	github.com/sirupsen/logrus v1.4.3-0.20200306102446-7ea96a3284ed
@@ -24,4 +24,4 @@ require (
 
 replace github.com/urfave/cli/v2 => github.com/mendersoftware/cli/v2 v2.1.1-minimal
 
-replace github.com/oleorhagen/progress v0.0.0 => /home/olepor/go/src/github.com/oleorhagen/progress
+replace github.com/mendersoftware/progressbar v0.0.0 => /home/olepor/go/src/github.com/mendersoftware/progressbar

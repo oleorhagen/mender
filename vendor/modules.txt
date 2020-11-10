@@ -23,9 +23,9 @@ github.com/mendersoftware/mendertesting
 ## explicit
 github.com/mendersoftware/openssl
 github.com/mendersoftware/openssl/utils
-# github.com/oleorhagen/progress v0.0.0 => /home/olepor/go/src/github.com/oleorhagen/progress
+# github.com/mendersoftware/progressbar v0.0.0 => /home/olepor/go/src/github.com/mendersoftware/progressbar
 ## explicit
-github.com/oleorhagen/progress/progressbar
+github.com/mendersoftware/progressbar
 # github.com/pkg/errors v0.7.2-0.20160916110212-a887431f7f6e
 ## explicit
 github.com/pkg/errors
